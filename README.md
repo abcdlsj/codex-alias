@@ -57,7 +57,7 @@ codexalias import <session-id> [target|@current]
 codexalias fix-session <session-id> [home|@current] [--provider <provider>]
 
 # Copy a session for default/another profile, then resume the copy
-codex-alias resume <session-id> [--profile default|<profile>]
+codexa resume <session-id> [--profile default|<profile>]
 
 # Interactive session migration into the current home
 codexalias migrate session
@@ -161,7 +161,7 @@ top-level `model_provider` setting.
 
 ## Resuming with another profile
 
-`codex-alias resume <session-id>` shows a numbered Rich list containing
+`codexa resume <session-id>` shows a numbered Rich list containing
 `default` and every added profile. It always creates a new session ID, copies
 the JSONL, history, and SQLite thread metadata, changes the provider only in
 the copy, and launches Codex with the selected profile. The source session is
@@ -169,8 +169,8 @@ never modified. This also works when profiles share session storage through
 symlinks because the cloned session has a distinct ID.
 
 Use `--profile cpa` to skip the prompt or `--no-launch` to create the copy
-without starting Codex. Both `codexalias` and `codex-alias` executable names
-are installed.
+without starting Codex. The installed executable names are `codex-alias`,
+`codexa`, and `codexalias`.
 
 ## Development
 

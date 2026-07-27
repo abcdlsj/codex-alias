@@ -27,25 +27,26 @@ err_console = Console(stderr=True)
 
 
 def success(message: str) -> None:
-    console.print(f"[green]✓[/] {message}")
+    console.print(f"[bold green]OK[/]  {message}")
 
 
 def info(message: str) -> None:
-    console.print(f"[cyan]•[/] {message}")
+    console.print(f"[bold cyan]INFO[/]  {message}")
 
 
 def warn(message: str) -> None:
-    console.print(f"[yellow]![/] {message}")
+    console.print(f"[bold yellow]WARN[/]  {message}")
 
 
 def error(message: str) -> None:
-    err_console.print(f"[bold red]Error:[/] {message}")
+    err_console.print(f"[bold red]ERROR[/]  {message}")
 
 
 def heading(text: str) -> None:
     """A lightweight section header: bold title with a rule underneath."""
-    console.print(f"\n[bold]{text}[/]")
-    console.print("[dim]" + "─" * min(len(text), 48) + "[/]")
+    title = text.upper()
+    console.print(f"\n[bold cyan]{title}[/]")
+    console.print("[dim]" + "─" * min(len(title), 48) + "[/]")
 
 
 def render_profiles(profiles: list[Profile]) -> None:
@@ -97,7 +98,7 @@ def render_copy_results(results: list[SessionCopyResult]) -> None:
             success(f"Copied session {r.session_id}")
         else:
             console.print(f"[dim]∘ already present, skipped {r.session_id}[/]")
-    info(f"Done: {copied} copied, {skipped} skipped.")
+    info(f"DONE  {copied} copied, {skipped} skipped.")
 
 
 def render_fix_result(result: SessionFixResult) -> None:
@@ -120,9 +121,10 @@ def render_fix_result(result: SessionFixResult) -> None:
 
 
 def render_clone_result(result: SessionCloneResult, target_label: str) -> None:
-    success(f"Copied session {result.source_session_id} -> {result.session_id}")
-    info(f"Target: {target_label}")
-    info(f"Provider: {result.provider}")
+    heading("Session copied")
+    success(f"{result.source_session_id} -> {result.session_id}")
+    info(f"TARGET    {target_label}")
+    info(f"PROVIDER  {result.provider}")
 
 
 def render_doctor(report: DoctorReport) -> None:
@@ -160,11 +162,12 @@ def render_doctor(report: DoctorReport) -> None:
 
 def choose(prompt: str, options: list[tuple[str, str]]) -> str:
     """Numbered single-choice picker. ``options`` is (value, label); returns value."""
+    heading(prompt)
     for idx, (_, label) in enumerate(options, start=1):
         console.print(f"  [cyan]{idx}[/]. {label}")
     default = "1"
     while True:
-        raw = Prompt.ask(prompt, default=default)
+        raw = Prompt.ask("Select", default=default)
         if raw.isdigit() and 1 <= int(raw) <= len(options):
             return options[int(raw) - 1][0]
         warn("Please enter a valid number.")
