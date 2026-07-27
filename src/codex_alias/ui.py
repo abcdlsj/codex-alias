@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
-from rich.table import Table
 from rich.text import Text
 
 from .models import (
@@ -41,37 +40,43 @@ def error(message: str) -> None:
     err_console.print(f"[bold red]Error:[/] {message}")
 
 
+def heading(text: str) -> None:
+    """A lightweight section header: bold title with a rule underneath."""
+    console.print(f"\n[bold]{text}[/]")
+    console.print("[dim]" + "─" * min(len(text), 48) + "[/]")
+
+
 def render_profiles(profiles: list[Profile]) -> None:
     if not profiles:
         console.print("[dim](no profiles yet)[/]")
         return
 
-    table = Table(title="Codex profiles", title_style="bold", header_style="bold cyan")
-    table.add_column("Profile")
-    table.add_column("Sessions")
-    table.add_column("Home", style="dim")
+    name_width = max(len(p.name) for p in profiles)
+    heading("Codex profiles")
     for profile in profiles:
-        shared = (
-            Text("shared", style="magenta")
+        marker, marker_style = (
+            ("shared", "magenta")
             if profile.sessions_shared
-            else Text("isolated", style="green")
+            else ("isolated", "green")
         )
-        table.add_row(profile.name, shared, str(profile.path))
-    console.print(table)
+        line = Text()
+        line.append("● ", style=marker_style)
+        line.append(profile.name.ljust(name_width), style="bold")
+        line.append(f"  {marker:<8}", style=marker_style)
+        console.print(line)
+        console.print(f"  [dim]{profile.path}[/]")
 
 
 def render_sessions(sessions: list[SessionFile], home_label: str, limit: int = 20) -> None:
-    table = Table(
-        title=f"Recent sessions · {home_label}",
-        title_style="bold",
-        header_style="bold cyan",
-    )
-    table.add_column("#", justify="right", style="dim")
-    table.add_column("Session ID")
-    table.add_column("Path", style="dim")
-    for idx, sf in enumerate(sessions[:limit], start=1):
-        table.add_row(str(idx), sf.session_id, sf.relative_path)
-    console.print(table)
+    shown = sessions[:limit]
+    num_width = len(str(len(shown)))
+    heading(f"Recent sessions · {home_label}")
+    for idx, sf in enumerate(shown, start=1):
+        line = Text()
+        line.append(f"{str(idx).rjust(num_width)}. ", style="cyan")
+        line.append(sf.session_id, style="bold")
+        console.print(line)
+        console.print(f"{' ' * (num_width + 2)}[dim]{sf.relative_path}[/]")
     if len(sessions) > limit:
         console.print(
             f"[dim]… {len(sessions) - limit} more. Enter a full session id to "
@@ -94,23 +99,32 @@ def render_copy_results(results: list[SessionCopyResult]) -> None:
 
 
 def render_doctor(report: DoctorReport) -> None:
-    table = Table(title="codexalias doctor", title_style="bold", show_header=False)
-    table.add_column("Key", style="bold cyan")
-    table.add_column("Value")
-    table.add_row("codex cmd", report.codex_cmd)
-    table.add_row("source home", str(report.source_home))
-    table.add_row("profile root", str(report.profile_root))
-    table.add_row("bin dir", str(report.bin_dir))
-    table.add_row("manager bin", report.manager_bin_name)
-    table.add_row(
-        "bin on PATH",
-        "[green]yes[/]" if report.bin_on_path else "[yellow]no[/]",
-    )
-    if report.codex_present:
-        table.add_row("codex present", f"[green]yes[/] ({report.codex_path})")
+    if report.bin_on_path:
+        path_value = Text("yes", style="green")
     else:
-        table.add_row("codex present", "[red]no[/]")
-    console.print(table)
+        path_value = Text("no", style="yellow")
+    if report.codex_present:
+        codex_value = Text.assemble(("yes", "green"), f" ({report.codex_path})")
+    else:
+        codex_value = Text("no", style="red")
+
+    rows: list[tuple[str, Text | str]] = [
+        ("codex cmd", report.codex_cmd),
+        ("source home", str(report.source_home)),
+        ("profile root", str(report.profile_root)),
+        ("bin dir", str(report.bin_dir)),
+        ("manager bin", report.manager_bin_name),
+        ("bin on PATH", path_value),
+        ("codex present", codex_value),
+    ]
+    key_width = max(len(key) for key, _ in rows)
+
+    heading("codexalias doctor")
+    for key, value in rows:
+        line = Text()
+        line.append(key.ljust(key_width) + "  ", style="bold cyan")
+        line.append(value if isinstance(value, Text) else Text(value))
+        console.print(line)
     if not report.bin_on_path:
         warn(f"{report.bin_dir} is not on PATH; wrappers won't be found until it is.")
     if not report.codex_present:
