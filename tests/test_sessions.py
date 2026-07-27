@@ -244,3 +244,109 @@ def test_fix_session_provider_sqlite_dry_run_does_not_write(mgr: CodexAlias) -> 
         assert connection.execute(
             "SELECT model_provider FROM threads WHERE id = ?", (SID_A,)
         ).fetchone() == ("aicoding",)
+
+
+def _create_thread_database(home, session_id: str, rollout_path, provider: str) -> None:
+    database = home / "state_5.sqlite"
+    home.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE threads (
+                id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL,
+                created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+                source TEXT NOT NULL, model_provider TEXT NOT NULL,
+                cwd TEXT NOT NULL, title TEXT NOT NULL
+            );
+            CREATE TABLE thread_dynamic_tools (
+                thread_id TEXT NOT NULL, position INTEGER NOT NULL,
+                name TEXT NOT NULL, description TEXT NOT NULL,
+                input_schema TEXT NOT NULL, defer_loading INTEGER NOT NULL DEFAULT 0,
+                namespace TEXT, PRIMARY KEY(thread_id, position)
+            );
+            """
+        )
+        connection.execute(
+            "INSERT INTO threads VALUES (?, ?, 1, 1, 'cli', ?, '/repo', 'title')",
+            (session_id, str(rollout_path), provider),
+        )
+
+
+def test_clone_session_for_profile_uses_new_id_and_preserves_source(
+    mgr: CodexAlias, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = mgr.config.source_home
+    source_path = _provider_session(source, SID_A)
+    original = source_path.read_bytes()
+    _create_thread_database(source, SID_A, source_path, "custom")
+    monkeypatch.setenv("HOME", str(source.parent))
+    # default_source_home resolves to HOME/.codex, so make the configured source
+    # discoverable under that canonical location for this test.
+    default_home = source.parent / ".codex"
+    default_home.symlink_to(source, target_is_directory=True)
+
+    target = mgr.config.profile_path("cpa")
+    target.mkdir(parents=True)
+    (target / "config.toml").write_text('model_provider = "cpa"\n')
+    _create_thread_database(target, SID_B, target / "other.jsonl", "cpa")
+
+    result = mgr.clone_session_for_profile(SID_A, target)
+
+    assert result.session_id != SID_A
+    assert result.provider == "cpa"
+    assert source_path.read_bytes() == original
+    records = [json.loads(line) for line in result.path.read_text().splitlines()]
+    assert records[0]["payload"]["id"] == result.session_id
+    assert records[0]["payload"]["model_provider"] == "cpa"
+    assert records[1]["payload"]["thread_settings"]["model_provider_id"] == "cpa"
+    with sqlite3.connect(target / "state_5.sqlite") as connection:
+        assert connection.execute(
+            "SELECT model_provider FROM threads WHERE id = ?",
+            (result.session_id,),
+        ).fetchone() == ("cpa",)
+
+
+def test_clone_session_works_when_target_storage_is_shared(
+    mgr: CodexAlias, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = mgr.config.source_home
+    source_path = _provider_session(source, SID_A)
+    _create_thread_database(source, SID_A, source_path, "custom")
+    monkeypatch.setenv("HOME", str(source.parent))
+    (source.parent / ".codex").symlink_to(source, target_is_directory=True)
+
+    target = mgr.config.profile_path("cpa")
+    target.mkdir(parents=True)
+    (target / "config.toml").write_text('model_provider = "cpa"\n')
+    (target / "sessions").symlink_to(source / "sessions", target_is_directory=True)
+    (target / "state_5.sqlite").symlink_to(source / "state_5.sqlite")
+
+    result = mgr.clone_session_for_profile(SID_A, target)
+
+    assert result.path.is_file()
+    assert result.session_id != SID_A
+    with sqlite3.connect(source / "state_5.sqlite") as connection:
+        rows = connection.execute(
+            "SELECT id, model_provider FROM threads ORDER BY id"
+        ).fetchall()
+    assert (SID_A, "custom") in rows
+    assert (result.session_id, "cpa") in rows
+
+
+def test_clone_session_allows_profile_without_state_database(
+    mgr: CodexAlias, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = mgr.config.source_home
+    _provider_session(source, SID_A)
+    monkeypatch.setenv("HOME", str(source.parent))
+    (source.parent / ".codex").symlink_to(source, target_is_directory=True)
+
+    target = mgr.config.profile_path("fresh")
+    target.mkdir(parents=True)
+    (target / "config.toml").write_text('model_provider = "fresh"\n')
+
+    result = mgr.clone_session_for_profile(SID_A, target)
+
+    assert result.path.is_file()
+    assert result.provider == "fresh"
+    assert not (target / "state_5.sqlite").exists()

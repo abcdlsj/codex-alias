@@ -14,6 +14,8 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import time
+import uuid
 from pathlib import Path
 
 try:
@@ -28,7 +30,13 @@ from .errors import (
     SessionNotFoundError,
     SessionRepairError,
 )
-from .models import CopyStatus, SessionCopyResult, SessionFile, SessionFixResult
+from .models import (
+    CopyStatus,
+    SessionCloneResult,
+    SessionCopyResult,
+    SessionFile,
+    SessionFixResult,
+)
 
 _UUID_RE = re.compile(
     r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
@@ -397,3 +405,173 @@ def fix_session_state_provider(
     finally:
         if "connection" in locals():
             connection.close()
+
+
+def _clone_jsonl(
+    session: SessionFile, dst_home: Path, new_id: str, provider: str
+) -> Path:
+    """Create a validated session copy with a new identity and provider."""
+    try:
+        lines = session.path.read_text(encoding="utf-8").splitlines(keepends=True)
+    except (OSError, UnicodeError) as exc:
+        raise SessionRepairError(f"failed to read session {session.path}: {exc}") from exc
+
+    rewritten: list[str] = []
+    for line_number, line in enumerate(lines, start=1):
+        body = line.rstrip("\r\n")
+        newline = line[len(body) :]
+        try:
+            record = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise SessionRepairError(
+                f"invalid JSONL record at {session.path}:{line_number}: {exc.msg}"
+            ) from exc
+        if not isinstance(record, dict):
+            raise SessionRepairError(
+                f"invalid non-object JSONL record at {session.path}:{line_number}"
+            )
+        payload = record.get("payload")
+        if record.get("type") == "session_meta" and isinstance(payload, dict):
+            if payload.get("id") == session.session_id:
+                payload["id"] = new_id
+            if payload.get("session_id") == session.session_id:
+                payload["session_id"] = new_id
+            payload["model_provider"] = provider
+        if record.get("type") == "event_msg" and isinstance(payload, dict):
+            settings = payload.get("thread_settings")
+            if isinstance(settings, dict) and "model_provider_id" in settings:
+                settings["model_provider_id"] = provider
+        rewritten.append(
+            json.dumps(record, ensure_ascii=False, separators=(",", ":")) + newline
+        )
+
+    source_name = session.path.name
+    if session.session_id not in source_name:
+        raise SessionRepairError(f"session id is missing from filename: {session.path}")
+    target_dir = _sessions_root(dst_home) / Path(session.relative_path).parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / source_name.replace(session.session_id, new_id)
+    if target_path.exists():
+        raise SessionConflictError(f"cloned session already exists: {target_path}")
+
+    temp_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=target_dir, delete=False
+        ) as temp_file:
+            temp_name = temp_file.name
+            temp_file.writelines(rewritten)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_name, target_path)
+    except OSError as exc:
+        if temp_name:
+            Path(temp_name).unlink(missing_ok=True)
+        raise SessionRepairError(f"failed to clone session to {target_path}: {exc}") from exc
+    return target_path
+
+
+def _clone_history(
+    src_home: Path, dst_home: Path, old_id: str, new_id: str
+) -> None:
+    src_history = src_home / "history.jsonl"
+    if not src_history.is_file():
+        return
+    additions: list[str] = []
+    for line in src_history.read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict) and record.get("session_id") == old_id:
+            record["session_id"] = new_id
+            additions.append(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+    if additions:
+        dst_home.mkdir(parents=True, exist_ok=True)
+        with (dst_home / "history.jsonl").open("a", encoding="utf-8") as fh:
+            for line in additions:
+                fh.write(line + "\n")
+
+
+def _clone_thread_state(
+    src_home: Path,
+    dst_home: Path,
+    old_id: str,
+    new_id: str,
+    rollout_path: Path,
+    provider: str,
+) -> bool:
+    src_database = (src_home / "state_5.sqlite").resolve()
+    dst_database = (dst_home / "state_5.sqlite").resolve()
+    # A profile that has never launched Codex does not have a database yet.
+    # Codex creates it and backfills rollout files on first startup.
+    if not src_database.is_file() or not dst_database.is_file():
+        return False
+
+    try:
+        with sqlite3.connect(src_database) as source:
+            source.row_factory = sqlite3.Row
+            row = source.execute("SELECT * FROM threads WHERE id = ?", (old_id,)).fetchone()
+            if row is None:
+                return False
+            values = dict(row)
+            tools = source.execute(
+                "SELECT position, name, description, input_schema, defer_loading, namespace "
+                "FROM thread_dynamic_tools WHERE thread_id = ? ORDER BY position",
+                (old_id,),
+            ).fetchall()
+
+        values["id"] = new_id
+        values["rollout_path"] = str(rollout_path)
+        values["model_provider"] = provider
+        now_seconds = int(time.time())
+        now_millis = int(time.time() * 1000)
+        for key in ("created_at", "updated_at", "recency_at"):
+            if key in values:
+                values[key] = now_seconds
+        for key in ("created_at_ms", "updated_at_ms", "recency_at_ms"):
+            if key in values:
+                values[key] = now_millis
+
+        with sqlite3.connect(dst_database) as target:
+            columns = [row[1] for row in target.execute("PRAGMA table_info(threads)")]
+            insert_columns = [column for column in columns if column in values]
+            placeholders = ",".join("?" for _ in insert_columns)
+            names = ",".join(f'"{column}"' for column in insert_columns)
+            target.execute(
+                f"INSERT INTO threads ({names}) VALUES ({placeholders})",
+                [values[column] for column in insert_columns],
+            )
+            for tool in tools:
+                target.execute(
+                    "INSERT INTO thread_dynamic_tools "
+                    "(thread_id, position, name, description, input_schema, defer_loading, namespace) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (new_id, *tuple(tool)),
+                )
+        return True
+    except sqlite3.Error as exc:
+        raise SessionRepairError(f"failed to clone thread state: {exc}") from exc
+
+
+def clone_session_for_profile(
+    src_home: Path, session: SessionFile, dst_home: Path, provider: str
+) -> SessionCloneResult:
+    """Copy a session to a new ID and adapt only the copy for a provider."""
+    new_id = str(uuid.uuid4())
+    target_path = _clone_jsonl(session, dst_home, new_id, provider)
+    try:
+        _clone_thread_state(
+            src_home, dst_home, session.session_id, new_id, target_path, provider
+        )
+        _clone_history(src_home, dst_home, session.session_id, new_id)
+    except Exception:
+        target_path.unlink(missing_ok=True)
+        raise
+    return SessionCloneResult(
+        source_session_id=session.session_id,
+        session_id=new_id,
+        provider=provider,
+        path=target_path,
+        target_home=dst_home,
+    )

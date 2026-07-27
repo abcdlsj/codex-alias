@@ -80,6 +80,17 @@ class SessionFixResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SessionCloneResult:
+    """A provider-adapted copy created for resume under another profile."""
+
+    source_session_id: str
+    session_id: str
+    provider: str
+    path: Path
+    target_home: Path
+
+
+@dataclass(frozen=True, slots=True)
 class LinkAction:
     """One filesystem link/backup performed while sharing sessions."""
 

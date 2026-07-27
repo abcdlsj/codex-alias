@@ -1,6 +1,6 @@
 [project]
 name = "codex-alias"
-version = "0.2.0"
+version = "0.3.0"
 description = "Run multiple Codex accounts/profiles with isolated homes, wrapper commands, and session migration."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,6 +19,7 @@ Repository = "https://github.com/abcdlsj/codexswitch"
 
 [project.scripts]
 codexalias = "codex_alias.cli:main"
+codex-alias = "codex_alias.cli:main"
 
 [build-system]
 requires = ["hatchling"]

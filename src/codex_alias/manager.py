@@ -16,7 +16,13 @@ from dataclasses import replace
 from pathlib import Path
 
 from .config import Config
-from .errors import HomeNotFoundError, InvalidNameError, ProfileNotFoundError
+from .errors import (
+    AmbiguousSessionError,
+    HomeNotFoundError,
+    InvalidNameError,
+    ProfileNotFoundError,
+    SessionNotFoundError,
+)
 from .models import (
     DoctorReport,
     HomeKind,
@@ -24,6 +30,7 @@ from .models import (
     LinkAction,
     Profile,
     SessionCopyResult,
+    SessionCloneResult,
     SessionFile,
     SessionFixResult,
 )
@@ -194,6 +201,38 @@ class CodexAlias:
         if not source.is_dir():
             raise HomeNotFoundError(f"default source home not found: {source}")
         return self.copy_session_by_query(source, query, dst_home)
+
+    def find_session(self, query: str) -> tuple[Path, SessionFile]:
+        """Find a session across default and profile homes, de-duplicating links."""
+        homes = [self.default_source_home(), *(p.path for p in self.list_profiles())]
+        seen: set[Path] = set()
+        matches: list[tuple[Path, SessionFile]] = []
+        for home in homes:
+            root = self._safe_resolve(home / "sessions")
+            if root in seen or not root.is_dir():
+                continue
+            seen.add(root)
+            try:
+                matches.append((home, sessions_mod.resolve_session_file(home, query)))
+            except (HomeNotFoundError, SessionNotFoundError):
+                continue
+        if not matches:
+            raise SessionNotFoundError(f"session not found: {query}")
+        unique = {self._safe_resolve(item[1].path): item for item in matches}
+        if len(unique) > 1:
+            raise AmbiguousSessionError(
+                query, [str(item[1].path) for item in unique.values()]
+            )
+        return next(iter(unique.values()))
+
+    def clone_session_for_profile(
+        self, query: str, target_home: Path
+    ) -> SessionCloneResult:
+        src_home, session = self.find_session(query)
+        provider = sessions_mod.configured_model_provider(target_home)
+        return sessions_mod.clone_session_for_profile(
+            src_home, session, target_home, provider
+        )
 
     def configured_model_provider(self, home: Path) -> str:
         return sessions_mod.configured_model_provider(home)

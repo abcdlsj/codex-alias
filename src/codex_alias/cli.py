@@ -155,6 +155,49 @@ def run(ctx: click.Context, profile: str, codex_args: tuple[str, ...]) -> None:
     os.execvpe(argv[0], argv, env)
 
 
+@cli.command()
+@click.argument("session_id")
+@click.option(
+    "--profile",
+    help="Target profile name, or 'default'. Prompts with a list when omitted.",
+)
+@click.option(
+    "--no-launch",
+    is_flag=True,
+    help="Create the copy but do not launch Codex.",
+)
+@click.pass_context
+def resume(
+    ctx: click.Context, session_id: str, profile: str | None, no_launch: bool
+) -> None:
+    """Copy a session for a selected profile, then resume the copy."""
+    mgr = _mgr(ctx)
+    profiles = mgr.list_profiles()
+    choices = [("default", f"default ({mgr.default_source_home()})")]
+    choices.extend((item.name, f"{item.name} ({item.path})") for item in profiles)
+
+    target_name = profile or ui.choose("Choose a profile", choices)
+    known_names = {value for value, _ in choices}
+    if target_name not in known_names:
+        raise click.ClickException(f"unknown profile: {target_name}")
+
+    if target_name == "default":
+        target_home = mgr.default_source_home()
+    else:
+        target_home = mgr.profile_home(target_name, must_exist=True)
+    target_label = next(label for value, label in choices if value == target_name)
+
+    result = mgr.clone_session_for_profile(session_id, target_home)
+    ui.render_clone_result(result, target_label)
+    if no_launch:
+        return
+
+    ui.info(f"Resuming copied session {result.session_id} ...")
+    env = dict(os.environ)
+    env["CODEX_HOME"] = str(target_home)
+    os.execvpe(mgr.config.codex_cmd, [mgr.config.codex_cmd, "resume", result.session_id], env)
+
+
 @cli.command(name="list")
 @click.pass_context
 def list_(ctx: click.Context) -> None:

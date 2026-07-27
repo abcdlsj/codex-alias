@@ -16,6 +16,7 @@ from .models import (
     DoctorReport,
     HomeRef,
     Profile,
+    SessionCloneResult,
     SessionCopyResult,
     SessionFile,
     SessionFixResult,
@@ -116,6 +117,12 @@ def render_fix_result(result: SessionFixResult) -> None:
         info(f"JSONL backup: {result.backup_path}")
     if result.state_backup_path is not None:
         info(f"SQLite backup: {result.state_backup_path}")
+
+
+def render_clone_result(result: SessionCloneResult, target_label: str) -> None:
+    success(f"Copied session {result.source_session_id} -> {result.session_id}")
+    info(f"Target: {target_label}")
+    info(f"Provider: {result.provider}")
 
 
 def render_doctor(report: DoctorReport) -> None:
