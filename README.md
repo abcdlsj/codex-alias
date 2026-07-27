@@ -53,6 +53,9 @@ codexalias add <profile> [command-name]
 # Import one session from default ~/.codex into current/target home
 codexalias import <session-id> [target|@current]
 
+# Repair stale provider metadata (provider defaults to HOME/config.toml)
+codexalias fix-session <session-id> [home|@current] [--provider <provider>]
+
 # Interactive session migration into the current home
 codexalias migrate session
 
@@ -130,6 +133,28 @@ This symlinks `~/.codex/profiles/work/sessions` (plus `history.jsonl` and the
 sharing profiles see the same conversation history while keeping separate
 auth/config. Existing real files are backed up to `*.backup.N` before being
 replaced with a symlink.
+
+## Repairing a session
+
+Codex persists model-provider metadata both inside each JSONL session and in
+the `state_5.sqlite` thread index. If a provider is later renamed or removed,
+`codex resume` can fail before the TUI starts with `Model provider '<name>' not
+found`. Repair both persisted copies with:
+
+```bash
+# Preview the repair; "custom" is inferred from ~/.codex/config.toml
+codexalias fix-session 019f8938-544e-7160-901c-af1ffb2657a5 --dry-run
+
+# Apply it, but only where the stale value is exactly "aicoding"
+codexalias fix-session 019f8938-544e-7160-901c-af1ffb2657a5 \
+  --from-provider aicoding
+```
+
+The command validates every JSONL record before writing, creates unique
+`*.backup.N` copies for changed JSONL and SQLite files, atomically replaces the
+JSONL, and conditionally updates only the matching SQLite thread row. Use
+`--provider` to override the provider inferred from the selected home's
+top-level `model_provider` setting.
 
 ## Development
 

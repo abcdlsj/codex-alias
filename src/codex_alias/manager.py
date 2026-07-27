@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import stat
+from dataclasses import replace
 from pathlib import Path
 
 from .config import Config
@@ -24,6 +25,7 @@ from .models import (
     Profile,
     SessionCopyResult,
     SessionFile,
+    SessionFixResult,
 )
 from . import sessions as sessions_mod
 
@@ -192,6 +194,38 @@ class CodexAlias:
         if not source.is_dir():
             raise HomeNotFoundError(f"default source home not found: {source}")
         return self.copy_session_by_query(source, query, dst_home)
+
+    def configured_model_provider(self, home: Path) -> str:
+        return sessions_mod.configured_model_provider(home)
+
+    def fix_session_provider(
+        self,
+        home: Path,
+        query: str,
+        provider: str,
+        *,
+        from_provider: str | None = None,
+        dry_run: bool = False,
+    ) -> SessionFixResult:
+        session = sessions_mod.resolve_session_file(home, query)
+        result = sessions_mod.fix_session_provider(
+            session,
+            provider,
+            from_provider=from_provider,
+            dry_run=dry_run,
+        )
+        state_changed, state_backup_path = sessions_mod.fix_session_state_provider(
+            home,
+            session.session_id,
+            provider,
+            from_provider=from_provider,
+            dry_run=dry_run,
+        )
+        return replace(
+            result,
+            state_changed=state_changed,
+            state_backup_path=state_backup_path,
+        )
 
     def candidate_source_homes(self, target_home: Path) -> list[HomeRef]:
         """Source homes usable for migration into ``target_home`` (excludes it)."""

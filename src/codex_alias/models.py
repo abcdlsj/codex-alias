@@ -65,6 +65,21 @@ class SessionCopyResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SessionFixResult:
+    """Summary of a provider repair performed on one session file."""
+
+    session_id: str
+    provider: str
+    previous_providers: tuple[str, ...]
+    changed_records: int
+    changed_fields: int
+    backup_path: Path | None
+    dry_run: bool
+    state_changed: bool = False
+    state_backup_path: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class LinkAction:
     """One filesystem link/backup performed while sharing sessions."""
 

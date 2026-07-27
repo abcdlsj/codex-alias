@@ -195,6 +195,41 @@ def import_(ctx: click.Context, session_id: str, target: str) -> None:
     ui.render_copy_results([result])
 
 
+@cli.command(name="fix-session")
+@click.argument("session_id")
+@click.argument("home", default=REF_CURRENT)
+@click.option(
+    "--provider",
+    help="Replacement provider (default: top-level model_provider in HOME/config.toml).",
+)
+@click.option(
+    "--from-provider",
+    help="Only replace fields with this provider value.",
+)
+@click.option("--dry-run", is_flag=True, help="Validate and report without writing.")
+@click.pass_context
+def fix_session(
+    ctx: click.Context,
+    session_id: str,
+    home: str,
+    provider: str | None,
+    from_provider: str | None,
+    dry_run: bool,
+) -> None:
+    """Repair stale provider metadata in one Codex session."""
+    mgr = _mgr(ctx)
+    target_home = mgr.resolve_home_ref(home).path
+    target_provider = provider or mgr.configured_model_provider(target_home)
+    result = mgr.fix_session_provider(
+        target_home,
+        session_id,
+        target_provider,
+        from_provider=from_provider,
+        dry_run=dry_run,
+    )
+    ui.render_fix_result(result)
+
+
 @cli.group()
 def migrate() -> None:
     """Migrate sessions between homes/profiles."""
@@ -265,4 +300,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

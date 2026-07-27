@@ -26,6 +26,7 @@ from .errors import (
     ProfileNotFoundError,
     SessionConflictError,
     SessionNotFoundError,
+    SessionRepairError,
 )
 from .manager import REF_CURRENT, REF_SOURCE, CodexAlias, validate_name
 from .models import (
@@ -37,6 +38,7 @@ from .models import (
     Profile,
     SessionCopyResult,
     SessionFile,
+    SessionFixResult,
 )
 
 __version__ = "0.2.0"
@@ -57,6 +59,7 @@ __all__ = [
     "Profile",
     "SessionCopyResult",
     "SessionFile",
+    "SessionFixResult",
     # errors
     "CodexmError",
     "InvalidNameError",
@@ -65,4 +68,5 @@ __all__ = [
     "SessionNotFoundError",
     "AmbiguousSessionError",
     "SessionConflictError",
+    "SessionRepairError",
 ]

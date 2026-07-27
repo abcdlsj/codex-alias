@@ -41,3 +41,7 @@ class AmbiguousSessionError(CodexmError):
 
 class SessionConflictError(CodexmError):
     """A target session already exists with different content."""
+
+
+class SessionRepairError(CodexmError):
+    """A session cannot be inspected or repaired safely."""

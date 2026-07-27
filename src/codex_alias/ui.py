@@ -18,6 +18,7 @@ from .models import (
     Profile,
     SessionCopyResult,
     SessionFile,
+    SessionFixResult,
 )
 
 console = Console()
@@ -96,6 +97,25 @@ def render_copy_results(results: list[SessionCopyResult]) -> None:
         else:
             console.print(f"[dim]∘ already present, skipped {r.session_id}[/]")
     info(f"Done: {copied} copied, {skipped} skipped.")
+
+
+def render_fix_result(result: SessionFixResult) -> None:
+    old = ", ".join(result.previous_providers) or "none"
+    if not result.changed_fields and not result.state_changed:
+        info(f"Session {result.session_id} already uses provider '{result.provider}'.")
+        return
+    action = "Would update" if result.dry_run else "Updated"
+    if result.changed_fields:
+        success(
+            f"{action} {result.changed_fields} JSONL provider field(s) in "
+            f"{result.changed_records} record(s): {old} -> {result.provider}"
+        )
+    if result.state_changed:
+        success(f"{action} provider in SQLite thread state -> {result.provider}")
+    if result.backup_path is not None:
+        info(f"JSONL backup: {result.backup_path}")
+    if result.state_backup_path is not None:
+        info(f"SQLite backup: {result.state_backup_path}")
 
 
 def render_doctor(report: DoctorReport) -> None:
