@@ -1,4 +1,4 @@
-"""Typed errors for the codexm library.
+"""Typed errors for the codexalias library.
 
 The library never prints or exits; it raises. The CLI layer decides how to
 render these to the user.
@@ -7,27 +7,27 @@ render these to the user.
 from __future__ import annotations
 
 
-class CodexmError(Exception):
-    """Base class for all recoverable codexm errors."""
+class CodexAliasError(Exception):
+    """Base class for all recoverable codexalias errors."""
 
 
-class InvalidNameError(CodexmError):
+class InvalidNameError(CodexAliasError):
     """A profile or command name contains disallowed characters."""
 
 
-class ProfileNotFoundError(CodexmError):
+class ProfileNotFoundError(CodexAliasError):
     """The requested profile does not exist on disk."""
 
 
-class HomeNotFoundError(CodexmError):
+class HomeNotFoundError(CodexAliasError):
     """A referenced Codex home / directory does not exist."""
 
 
-class SessionNotFoundError(CodexmError):
+class SessionNotFoundError(CodexAliasError):
     """No session matched the given query in the source home."""
 
 
-class AmbiguousSessionError(CodexmError):
+class AmbiguousSessionError(CodexAliasError):
     """A session query matched more than one session file."""
 
     def __init__(self, query: str, matches: list[str]) -> None:
@@ -39,9 +39,9 @@ class AmbiguousSessionError(CodexmError):
         )
 
 
-class SessionConflictError(CodexmError):
+class SessionConflictError(CodexAliasError):
     """A target session already exists with different content."""
 
 
-class SessionRepairError(CodexmError):
+class SessionRepairError(CodexAliasError):
     """A session cannot be inspected or repaired safely."""

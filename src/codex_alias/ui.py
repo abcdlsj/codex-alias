@@ -141,6 +141,7 @@ def render_doctor(report: DoctorReport) -> None:
         ("codex cmd", report.codex_cmd),
         ("codex wrapper", report.codex_wrapper or "(none)"),
         ("effective cmd", report.effective_codex_cmd),
+        ("fixed args", " ".join(report.codex_args) or "(none)"),
         ("source home", str(report.source_home)),
         ("profile root", str(report.profile_root)),
         ("bin dir", str(report.bin_dir)),

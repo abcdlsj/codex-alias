@@ -15,7 +15,7 @@ import click
 
 from . import __version__, ui
 from .config import Config
-from .errors import CodexmError
+from .errors import CodexAliasError
 from .manager import REF_CURRENT, REF_SOURCE, CodexAlias
 
 def _mgr(ctx: click.Context) -> CodexAlias:
@@ -225,6 +225,17 @@ def remove(ctx: click.Context, profile: str, command_name: str | None) -> None:
         ui.warn(f"Wrapper not found: {target}")
 
 
+@cli.command(name="refresh-wrappers")
+@click.pass_context
+def refresh_wrappers(ctx: click.Context) -> None:
+    """Regenerate default commands for all existing profiles."""
+    targets = _mgr(ctx).refresh_wrappers()
+    for target in targets:
+        ui.success(f"Refreshed wrapper: {target}")
+    if not targets:
+        ui.info("No profiles found.")
+
+
 @cli.command(name="import")
 @click.argument("session_id")
 @click.argument("target", default=REF_CURRENT)
@@ -335,7 +346,7 @@ def doctor(ctx: click.Context) -> None:
 def main() -> None:
     try:
         cli()
-    except CodexmError as exc:
+    except CodexAliasError as exc:
         ui.error(str(exc))
         sys.exit(1)
 

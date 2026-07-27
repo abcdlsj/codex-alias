@@ -104,6 +104,7 @@ class DoctorReport:
     codex_cmd: str
     codex_wrapper: str | None
     effective_codex_cmd: str
+    codex_args: tuple[str, ...]
     source_home: Path
     profile_root: Path
     bin_dir: Path

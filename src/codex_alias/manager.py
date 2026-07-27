@@ -2,7 +2,7 @@
 
 ``CodexAlias`` is the single object CLIs and other tools construct. Every method
 is UI-free: it performs filesystem work and returns value objects or raises a
-:class:`~codex_alias.errors.CodexmError`. Interactive selection/prompting lives
+:class:`~codex_alias.errors.CodexAliasError`. Interactive selection/prompting lives
 in the caller.
 """
 
@@ -161,7 +161,7 @@ class CodexAlias:
         profile_path.mkdir(parents=True, exist_ok=True)
         env = dict(os.environ)
         env["CODEX_HOME"] = str(profile_path)
-        return [self.config.effective_codex_cmd, *args], env
+        return [self.config.effective_codex_cmd, *self.config.codex_args, *args], env
 
     def resume_argv(
         self, home: Path, session_id: str
@@ -169,18 +169,23 @@ class CodexAlias:
         """Build a resume invocation through the configured Codex wrapper."""
         env = dict(os.environ)
         env["CODEX_HOME"] = str(home)
-        return [self.config.effective_codex_cmd, "resume", session_id], env
+        return [
+            self.config.effective_codex_cmd,
+            *self.config.codex_args,
+            "resume",
+            session_id,
+        ], env
 
     def _wrapper_script(self, profile: str) -> str:
         return (
             "#!/usr/bin/env bash\n"
             "set -euo pipefail\n"
-            f'PROFILE_ROOT="${{CODEXSWITCH_PROFILE_ROOT:-{self.config.profile_root}}}"\n'
-            f'CODEX_CMD="${{CODEXSWITCH_CODEX_WRAPPER:-${{CODEXSWITCH_CODEX_CMD:-{self.config.codex_cmd}}}}}"\n'
-            f'export CODEX_HOME="${{PROFILE_ROOT}}/{profile}"\n'
-            'mkdir -p "${CODEX_HOME}"\n'
-            'exec "${CODEX_CMD}" "$@"\n'
+            f'exec "${{CODEXALIAS_MANAGER_BIN_NAME:-codexalias}}" run {profile} "$@"\n'
         )
+
+    def refresh_wrappers(self) -> list[Path]:
+        """Regenerate default wrapper commands for every existing profile."""
+        return [self.add_profile(profile.name) for profile in self.list_profiles()]
 
     # --------------------------------------------------------------- sessions
 
@@ -348,6 +353,7 @@ class CodexAlias:
             codex_cmd=self.config.codex_cmd,
             codex_wrapper=self.config.codex_wrapper,
             effective_codex_cmd=effective_cmd,
+            codex_args=self.config.codex_args,
             source_home=self.config.source_home,
             profile_root=self.config.profile_root,
             bin_dir=self.config.bin_dir,

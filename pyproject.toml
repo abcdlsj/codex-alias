@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/abcdlsj/codexswitch"
-Repository = "https://github.com/abcdlsj/codexswitch"
+Homepage = "https://github.com/abcdlsj/codex-alias"
+Repository = "https://github.com/abcdlsj/codex-alias"
 
 [project.scripts]
 codexalias = "codex_alias.cli:main"

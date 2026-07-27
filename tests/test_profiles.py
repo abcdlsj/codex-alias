@@ -13,7 +13,7 @@ def test_add_profile_creates_home_and_wrapper(mgr: CodexAlias) -> None:
     assert (mgr.config.profile_root / "work").is_dir()
 
     script = target.read_text()
-    assert 'export CODEX_HOME="${PROFILE_ROOT}/work"' in script
+    assert 'exec "${CODEXALIAS_MANAGER_BIN_NAME:-codexalias}" run work "$@"' in script
     assert target.stat().st_mode & 0o111  # executable
 
 
@@ -63,21 +63,23 @@ def test_resume_argv_uses_configured_wrapper(mgr: CodexAlias) -> None:
 def test_generated_wrapper_prefers_runtime_codex_wrapper(mgr: CodexAlias) -> None:
     target = mgr.add_profile("work")
     script = target.read_text()
-    assert "CODEXSWITCH_CODEX_WRAPPER" in script
-    assert "CODEXSWITCH_CODEX_CMD" in script
+    assert "codexalias" in script
+    assert "CODEXALIAS_MANAGER_BIN_NAME" in script
 
 
 def test_config_prefers_codex_wrapper(tmp_path) -> None:
     config = Config.from_env(
         {
             "HOME": str(tmp_path),
-            "CODEXSWITCH_CODEX_CMD": "real-codex",
-            "CODEXSWITCH_CODEX_WRAPPER": "/tools/codex-wrapper",
+            "CODEXALIAS_CODEX_CMD": "real-codex",
+            "CODEXALIAS_CODEX_WRAPPER": "/tools/codex-wrapper",
+            "CODEXALIAS_CODEX_ARGS": '--flag "two words"',
         }
     )
     assert config.codex_cmd == "real-codex"
     assert config.codex_wrapper == "/tools/codex-wrapper"
     assert config.effective_codex_cmd == "/tools/codex-wrapper"
+    assert config.codex_args == ("--flag", "two words")
 
 
 def test_resolve_home_ref_kinds(mgr: CodexAlias, monkeypatch) -> None:

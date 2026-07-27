@@ -1,18 +1,20 @@
-"""Configuration for codexm, resolved from environment with sane defaults.
+"""Configuration for codexalias, resolved from environment with sane defaults.
 
 Mirrors the environment contract of the original shell tool:
 
-- CODEXSWITCH_PROFILE_ROOT  -> profile_root   (default ~/.codex/profiles)
-- CODEXSWITCH_BIN_DIR       -> bin_dir        (default ~/.local/bin)
-- CODEXSWITCH_CODEX_CMD     -> codex_cmd      (default "codex")
-- CODEXSWITCH_CODEX_WRAPPER -> codex_wrapper  (optional executable wrapper)
-- CODEXSWITCH_SOURCE_HOME   -> source_home    (default $CODEX_HOME or ~/.codex)
-- CODEXSWITCH_MANAGER_BIN_NAME -> manager_bin (default "codexm")
+- CODEXALIAS_PROFILE_ROOT  -> profile_root   (default ~/.codex/profiles)
+- CODEXALIAS_BIN_DIR       -> bin_dir        (default ~/.local/bin)
+- CODEXALIAS_CODEX_CMD     -> codex_cmd      (default "codex")
+- CODEXALIAS_CODEX_WRAPPER -> codex_wrapper  (optional executable wrapper)
+- CODEXALIAS_CODEX_ARGS    -> codex_args     (optional shell-style fixed args)
+- CODEXALIAS_SOURCE_HOME   -> source_home    (default $CODEX_HOME or ~/.codex)
+- CODEXALIAS_MANAGER_BIN_NAME -> manager_bin (default "codexalias")
 """
 
 from __future__ import annotations
 
 import os
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +37,7 @@ class Config:
     source_home: Path
     manager_bin_name: str
     codex_wrapper: str | None = None
+    codex_args: tuple[str, ...] = ()
 
     @property
     def effective_codex_cmd(self) -> str:
@@ -49,17 +52,18 @@ class Config:
 
         return cls(
             profile_root=_expand(
-                env.get("CODEXSWITCH_PROFILE_ROOT", str(home / ".codex" / "profiles"))
+                env.get("CODEXALIAS_PROFILE_ROOT", str(home / ".codex" / "profiles"))
             ),
             bin_dir=_expand(
-                env.get("CODEXSWITCH_BIN_DIR", str(home / ".local" / "bin"))
+                env.get("CODEXALIAS_BIN_DIR", str(home / ".local" / "bin"))
             ),
-            codex_cmd=env.get("CODEXSWITCH_CODEX_CMD", "codex"),
+            codex_cmd=env.get("CODEXALIAS_CODEX_CMD", "codex"),
             source_home=_expand(
-                env.get("CODEXSWITCH_SOURCE_HOME", default_source)
+                env.get("CODEXALIAS_SOURCE_HOME", default_source)
             ),
-            manager_bin_name=env.get("CODEXSWITCH_MANAGER_BIN_NAME", "codexalias"),
-            codex_wrapper=env.get("CODEXSWITCH_CODEX_WRAPPER") or None,
+            manager_bin_name=env.get("CODEXALIAS_MANAGER_BIN_NAME", "codexalias"),
+            codex_wrapper=env.get("CODEXALIAS_CODEX_WRAPPER") or None,
+            codex_args=tuple(shlex.split(env.get("CODEXALIAS_CODEX_ARGS", ""))),
         )
 
     def profile_path(self, profile: str) -> Path:

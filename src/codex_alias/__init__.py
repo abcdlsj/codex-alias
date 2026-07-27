@@ -10,7 +10,7 @@ CLI:
     for profile in mgr.list_profiles():
         print(profile.name)
 
-Everything under this namespace raises :class:`CodexmError` subclasses instead
+Everything under this namespace raises :class:`CodexAliasError` subclasses instead
 of printing or exiting, so the same core drives the CLI, tests, and any other
 tooling.
 """
@@ -20,7 +20,7 @@ from __future__ import annotations
 from .config import Config
 from .errors import (
     AmbiguousSessionError,
-    CodexmError,
+    CodexAliasError,
     HomeNotFoundError,
     InvalidNameError,
     ProfileNotFoundError,
@@ -63,7 +63,7 @@ __all__ = [
     "SessionFile",
     "SessionFixResult",
     # errors
-    "CodexmError",
+    "CodexAliasError",
     "InvalidNameError",
     "ProfileNotFoundError",
     "HomeNotFoundError",

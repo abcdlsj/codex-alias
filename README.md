@@ -93,18 +93,20 @@ an absolute path also works anywhere a home is expected.
 
 ## Environment variables
 
-- `CODEXSWITCH_PROFILE_ROOT`: profile root directory (default: `~/.codex/profiles`)
-- `CODEXSWITCH_BIN_DIR`: output directory for wrappers (default: `~/.local/bin`)
-- `CODEXSWITCH_CODEX_CMD`: original Codex command (default: `codex`)
-- `CODEXSWITCH_CODEX_WRAPPER`: executable Codex wrapper; takes precedence over
-  `CODEXSWITCH_CODEX_CMD` for `run`, `resume`, and generated profile commands
-- `CODEXSWITCH_SOURCE_HOME`: source home used by `add`/`@source` (default: `$CODEX_HOME` or `~/.codex`)
-- `CODEXSWITCH_MANAGER_BIN_NAME`: manager binary name reported by `doctor` (default: `codexalias`)
+- `CODEXALIAS_PROFILE_ROOT`: profile root directory (default: `~/.codex/profiles`)
+- `CODEXALIAS_BIN_DIR`: output directory for wrappers (default: `~/.local/bin`)
+- `CODEXALIAS_CODEX_CMD`: original Codex command (default: `codex`)
+- `CODEXALIAS_CODEX_WRAPPER`: executable Codex wrapper; takes precedence over
+  `CODEXALIAS_CODEX_CMD` for `run`, `resume`, and generated profile commands
+- `CODEXALIAS_CODEX_ARGS`: fixed arguments prepended to every Codex invocation
+- `CODEXALIAS_SOURCE_HOME`: source home used by `add`/`@source` (default: `$CODEX_HOME` or `~/.codex`)
+- `CODEXALIAS_MANAGER_BIN_NAME`: manager binary name used by generated profile commands (default: `codexalias`)
 
 To reuse a wrapper that automatically adds yolo flags, hooks, or notifications:
 
 ```bash
-export CODEXSWITCH_CODEX_WRAPPER="$HOME/.superset/bin/codex"
+export CODEXALIAS_CODEX_WRAPPER="$HOME/.superset/bin/codex"
+export CODEXALIAS_CODEX_ARGS="--dangerously-bypass-approvals-and-sandbox"
 codexa resume <session-id>
 ```
 
@@ -114,7 +116,7 @@ not executable files and therefore cannot be used as process wrappers.
 ## Library usage
 
 The core is importable and never prints or exits — it returns value objects or
-raises `CodexmError` subclasses, so you can drive it from your own tooling:
+raises `CodexAliasError` subclasses, so you can drive it from your own tooling:
 
 ```python
 from codex_alias import CodexAlias, Config
