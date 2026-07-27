@@ -5,7 +5,7 @@ help: ## Show this help
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install the codexalias CLI onto PATH via uv
-	uv tool install --force .
+	uv tool install --force --reinstall --refresh .
 
 uninstall: ## Remove the installed codexalias CLI
 	uv tool uninstall codex-alias

@@ -1,6 +1,6 @@
 [project]
 name = "codex-alias"
-version = "0.3.0"
+version = "0.3.1"
 description = "Run multiple Codex accounts/profiles with isolated homes, wrapper commands, and session migration."
 readme = "README.md"
 requires-python = ">=3.10"
