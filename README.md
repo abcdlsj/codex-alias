@@ -15,13 +15,19 @@ It ships as a Python package with two parts:
 Requires [uv](https://docs.astral.sh/uv/).
 
 ```bash
-# Install the CLI globally as a tool
+# One-shot install onto PATH
+make install
+
+# Equivalently, via uv directly
 uv tool install .
 
 # Or work inside the project
 uv sync
 uv run codexalias doctor
 ```
+
+Other `make` targets: `make test`, `make sync`, `make uninstall`, `make clean`
+(run `make help` for the list).
 
 `uv tool install .` puts `codexalias` on your PATH. From there:
 
