@@ -5,6 +5,7 @@ Mirrors the environment contract of the original shell tool:
 - CODEXSWITCH_PROFILE_ROOT  -> profile_root   (default ~/.codex/profiles)
 - CODEXSWITCH_BIN_DIR       -> bin_dir        (default ~/.local/bin)
 - CODEXSWITCH_CODEX_CMD     -> codex_cmd      (default "codex")
+- CODEXSWITCH_CODEX_WRAPPER -> codex_wrapper  (optional executable wrapper)
 - CODEXSWITCH_SOURCE_HOME   -> source_home    (default $CODEX_HOME or ~/.codex)
 - CODEXSWITCH_MANAGER_BIN_NAME -> manager_bin (default "codexm")
 """
@@ -33,6 +34,12 @@ class Config:
     codex_cmd: str
     source_home: Path
     manager_bin_name: str
+    codex_wrapper: str | None = None
+
+    @property
+    def effective_codex_cmd(self) -> str:
+        """Executable used to launch Codex, preferring an explicit wrapper."""
+        return self.codex_wrapper or self.codex_cmd
 
     @classmethod
     def from_env(cls, environ: os._Environ | dict[str, str] | None = None) -> "Config":
@@ -52,6 +59,7 @@ class Config:
                 env.get("CODEXSWITCH_SOURCE_HOME", default_source)
             ),
             manager_bin_name=env.get("CODEXSWITCH_MANAGER_BIN_NAME", "codexalias"),
+            codex_wrapper=env.get("CODEXSWITCH_CODEX_WRAPPER") or None,
         )
 
     def profile_path(self, profile: str) -> Path:

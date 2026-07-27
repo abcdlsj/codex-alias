@@ -102,6 +102,8 @@ class DoctorReport:
     """Environment snapshot and sanity checks."""
 
     codex_cmd: str
+    codex_wrapper: str | None
+    effective_codex_cmd: str
     source_home: Path
     profile_root: Path
     bin_dir: Path

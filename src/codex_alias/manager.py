@@ -161,14 +161,22 @@ class CodexAlias:
         profile_path.mkdir(parents=True, exist_ok=True)
         env = dict(os.environ)
         env["CODEX_HOME"] = str(profile_path)
-        return [self.config.codex_cmd, *args], env
+        return [self.config.effective_codex_cmd, *args], env
+
+    def resume_argv(
+        self, home: Path, session_id: str
+    ) -> tuple[list[str], dict[str, str]]:
+        """Build a resume invocation through the configured Codex wrapper."""
+        env = dict(os.environ)
+        env["CODEX_HOME"] = str(home)
+        return [self.config.effective_codex_cmd, "resume", session_id], env
 
     def _wrapper_script(self, profile: str) -> str:
         return (
             "#!/usr/bin/env bash\n"
             "set -euo pipefail\n"
             f'PROFILE_ROOT="${{CODEXSWITCH_PROFILE_ROOT:-{self.config.profile_root}}}"\n'
-            f'CODEX_CMD="${{CODEXSWITCH_CODEX_CMD:-{self.config.codex_cmd}}}"\n'
+            f'CODEX_CMD="${{CODEXSWITCH_CODEX_WRAPPER:-${{CODEXSWITCH_CODEX_CMD:-{self.config.codex_cmd}}}}}"\n'
             f'export CODEX_HOME="${{PROFILE_ROOT}}/{profile}"\n'
             'mkdir -p "${CODEX_HOME}"\n'
             'exec "${CODEX_CMD}" "$@"\n'
@@ -334,9 +342,12 @@ class CodexAlias:
     def doctor(self) -> DoctorReport:
         bin_dir = str(self.config.bin_dir)
         path_entries = os.environ.get("PATH", "").split(os.pathsep)
-        codex_path = shutil.which(self.config.codex_cmd)
+        effective_cmd = self.config.effective_codex_cmd
+        codex_path = shutil.which(effective_cmd)
         return DoctorReport(
             codex_cmd=self.config.codex_cmd,
+            codex_wrapper=self.config.codex_wrapper,
+            effective_codex_cmd=effective_cmd,
             source_home=self.config.source_home,
             profile_root=self.config.profile_root,
             bin_dir=self.config.bin_dir,

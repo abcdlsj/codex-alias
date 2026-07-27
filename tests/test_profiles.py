@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from codex_alias import CodexAlias, InvalidNameError
+from codex_alias import CodexAlias, Config, InvalidNameError
 from codex_alias.models import HomeKind
 
 
@@ -51,6 +51,33 @@ def test_run_argv_sets_isolated_home(mgr: CodexAlias) -> None:
     argv, env = mgr.run_argv("work", ["--", "--help"])
     assert argv == ["codex", "--", "--help"]
     assert env["CODEX_HOME"] == str(mgr.config.profile_root / "work")
+
+
+def test_resume_argv_uses_configured_wrapper(mgr: CodexAlias) -> None:
+    home = mgr.config.profile_root / "work"
+    argv, env = mgr.resume_argv(home, "session-id")
+    assert argv == ["codex", "resume", "session-id"]
+    assert env["CODEX_HOME"] == str(home)
+
+
+def test_generated_wrapper_prefers_runtime_codex_wrapper(mgr: CodexAlias) -> None:
+    target = mgr.add_profile("work")
+    script = target.read_text()
+    assert "CODEXSWITCH_CODEX_WRAPPER" in script
+    assert "CODEXSWITCH_CODEX_CMD" in script
+
+
+def test_config_prefers_codex_wrapper(tmp_path) -> None:
+    config = Config.from_env(
+        {
+            "HOME": str(tmp_path),
+            "CODEXSWITCH_CODEX_CMD": "real-codex",
+            "CODEXSWITCH_CODEX_WRAPPER": "/tools/codex-wrapper",
+        }
+    )
+    assert config.codex_cmd == "real-codex"
+    assert config.codex_wrapper == "/tools/codex-wrapper"
+    assert config.effective_codex_cmd == "/tools/codex-wrapper"
 
 
 def test_resolve_home_ref_kinds(mgr: CodexAlias, monkeypatch) -> None:

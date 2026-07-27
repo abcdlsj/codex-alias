@@ -96,8 +96,20 @@ an absolute path also works anywhere a home is expected.
 - `CODEXSWITCH_PROFILE_ROOT`: profile root directory (default: `~/.codex/profiles`)
 - `CODEXSWITCH_BIN_DIR`: output directory for wrappers (default: `~/.local/bin`)
 - `CODEXSWITCH_CODEX_CMD`: original Codex command (default: `codex`)
+- `CODEXSWITCH_CODEX_WRAPPER`: executable Codex wrapper; takes precedence over
+  `CODEXSWITCH_CODEX_CMD` for `run`, `resume`, and generated profile commands
 - `CODEXSWITCH_SOURCE_HOME`: source home used by `add`/`@source` (default: `$CODEX_HOME` or `~/.codex`)
 - `CODEXSWITCH_MANAGER_BIN_NAME`: manager binary name reported by `doctor` (default: `codexalias`)
+
+To reuse a wrapper that automatically adds yolo flags, hooks, or notifications:
+
+```bash
+export CODEXSWITCH_CODEX_WRAPPER="$HOME/.superset/bin/codex"
+codexa resume <session-id>
+```
+
+The value must be an executable name or path. Shell aliases and functions are
+not executable files and therefore cannot be used as process wrappers.
 
 ## Library usage
 

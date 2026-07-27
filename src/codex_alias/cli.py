@@ -193,9 +193,8 @@ def resume(
         return
 
     ui.info(f"Resuming copied session {result.session_id} ...")
-    env = dict(os.environ)
-    env["CODEX_HOME"] = str(target_home)
-    os.execvpe(mgr.config.codex_cmd, [mgr.config.codex_cmd, "resume", result.session_id], env)
+    argv, env = mgr.resume_argv(target_home, result.session_id)
+    os.execvpe(argv[0], argv, env)
 
 
 @cli.command(name="list")
