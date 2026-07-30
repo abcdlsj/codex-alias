@@ -60,6 +60,57 @@ def test_resume_argv_uses_configured_wrapper(mgr: CodexAlias) -> None:
     assert env["CODEX_HOME"] == str(home)
 
 
+def test_run_argv_inherits_fish_codex_wrapper(mgr: CodexAlias, monkeypatch) -> None:
+    monkeypatch.setenv("SHELL", "/opt/homebrew/bin/fish")
+
+    argv, _ = mgr.run_argv(
+        "work", ["--dangerously-bypass-approvals-and-sandbox", "--version"]
+    )
+
+    assert argv == [
+        "/opt/homebrew/bin/fish",
+        "-ic",
+        "codex $argv",
+        "--",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--version",
+    ]
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh", "sh", "dash", "ksh"])
+def test_run_argv_inherits_posix_shell_codex_wrapper(
+    mgr: CodexAlias, monkeypatch, shell: str
+) -> None:
+    monkeypatch.setenv("SHELL", f"/bin/{shell}")
+
+    argv, _ = mgr.run_argv("work", ["--model", "gpt-5"])
+
+    assert argv == [
+        f"/bin/{shell}",
+        "-ic",
+        'codex "$@"',
+        "codex",
+        "--model",
+        "gpt-5",
+    ]
+
+
+def test_explicit_codex_wrapper_bypasses_shell(tmp_path, monkeypatch) -> None:
+    config = Config(
+        profile_root=tmp_path / "profiles",
+        bin_dir=tmp_path / "bin",
+        codex_cmd="codex",
+        source_home=tmp_path / "source",
+        manager_bin_name="codexalias",
+        codex_wrapper="/tools/codex-wrapper",
+    )
+    monkeypatch.setenv("SHELL", "/opt/homebrew/bin/fish")
+
+    argv, _ = CodexAlias(config).run_argv("work", ["--version"])
+
+    assert argv == ["/tools/codex-wrapper", "--version"]
+
+
 def test_generated_wrapper_prefers_runtime_codex_wrapper(mgr: CodexAlias) -> None:
     target = mgr.add_profile("work")
     script = target.read_text()

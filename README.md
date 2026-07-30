@@ -91,6 +91,12 @@ codexalias doctor
 `CODEX_HOME` (falling back to the source home when unset). A bare profile name or
 an absolute path also works anywhere a home is expected.
 
+By default, profile commands resolve `codex` through the user's login shell, as
+if `codex ...` had been entered directly. This preserves fish/bash/zsh functions
+and aliases as well as PATH-based executable wrappers such as Superset. Existing
+generated profile commands pick up wrapper changes automatically; refreshing
+them is only necessary when the generated wrapper format itself changes.
+
 ## Environment variables
 
 - `CODEXALIAS_PROFILE_ROOT`: profile root directory (default: `~/.codex/profiles`)
@@ -102,7 +108,7 @@ an absolute path also works anywhere a home is expected.
 - `CODEXALIAS_SOURCE_HOME`: source home used by `add`/`@source` (default: `$CODEX_HOME` or `~/.codex`)
 - `CODEXALIAS_MANAGER_BIN_NAME`: manager binary name used by generated profile commands (default: `codexalias`)
 
-To reuse a wrapper that automatically adds yolo flags, hooks, or notifications:
+To explicitly override normal shell resolution with a standalone executable:
 
 ```bash
 export CODEXALIAS_CODEX_WRAPPER="$HOME/.superset/bin/codex"
@@ -110,8 +116,8 @@ export CODEXALIAS_CODEX_ARGS="--dangerously-bypass-approvals-and-sandbox"
 codexa resume <session-id>
 ```
 
-The value must be an executable name or path. Shell aliases and functions are
-not executable files and therefore cannot be used as process wrappers.
+The explicit override must be an executable name or path. Without it, shell
+aliases and functions are inherited automatically.
 
 ## Library usage
 

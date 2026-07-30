@@ -23,6 +23,8 @@ def config(tmp_path: Path) -> Config:
 def mgr(config: Config, monkeypatch: pytest.MonkeyPatch) -> CodexAlias:
     # Ensure CODEX_HOME doesn't leak in from the real environment.
     monkeypatch.delenv("CODEX_HOME", raising=False)
+    # Tests opt into shell-aware launching explicitly when relevant.
+    monkeypatch.delenv("SHELL", raising=False)
     return CodexAlias(config)
 
 

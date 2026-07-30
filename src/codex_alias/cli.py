@@ -144,7 +144,16 @@ def add(ctx: click.Context, profile: str, command_name: str | None, no_bootstrap
         ui.warn(f"{mgr.config.bin_dir} is not on PATH.")
 
 
-@cli.command()
+@cli.command(
+    context_settings={
+        # Everything after PROFILE belongs to Codex.  In particular, do not
+        # let Click reject Codex options that codexalias does not know about.
+        # Disabling interspersed option parsing also forwards option names
+        # shared with this command (for example ``--help``).
+        "ignore_unknown_options": True,
+        "allow_interspersed_args": False,
+    }
+)
 @click.argument("profile")
 @click.argument("codex_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context

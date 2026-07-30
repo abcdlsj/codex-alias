@@ -161,7 +161,7 @@ class CodexAlias:
         profile_path.mkdir(parents=True, exist_ok=True)
         env = dict(os.environ)
         env["CODEX_HOME"] = str(profile_path)
-        return [self.config.effective_codex_cmd, *self.config.codex_args, *args], env
+        return self._codex_argv(args), env
 
     def resume_argv(
         self, home: Path, session_id: str
@@ -169,12 +169,38 @@ class CodexAlias:
         """Build a resume invocation through the configured Codex wrapper."""
         env = dict(os.environ)
         env["CODEX_HOME"] = str(home)
-        return [
-            self.config.effective_codex_cmd,
-            *self.config.codex_args,
-            "resume",
-            session_id,
-        ], env
+        return self._codex_argv(["resume", session_id]), env
+
+    def _codex_argv(self, args: list[str]) -> list[str]:
+        """Build a launch that resolves ``codex`` like the user's shell does.
+
+        Shell functions and aliases are process-local and cannot be inherited
+        by the generated executable wrappers.  Starting the login shell in
+        interactive command mode recreates that normal command resolution,
+        including PATH-based wrappers such as Superset.  Explicit codexalias
+        command/wrapper configuration remains an escape hatch and is executed
+        directly for backwards compatibility.
+        """
+        fixed_args = [*self.config.codex_args, *args]
+        if self.config.codex_wrapper or self.config.codex_cmd != "codex":
+            return [self.config.effective_codex_cmd, *fixed_args]
+
+        shell = os.environ.get("SHELL")
+        if not shell:
+            return ["codex", *fixed_args]
+
+        shell_name = Path(shell).name
+        if shell_name == "fish":
+            # ``--`` prevents leading Codex flags from being consumed as fish
+            # interpreter options; arguments after it populate fish's $argv.
+            return [shell, "-ic", "codex $argv", "--", *fixed_args]
+        if shell_name in {"sh", "bash", "zsh", "dash", "ksh"}:
+            # The first argument after the command string becomes $0; the
+            # remaining arguments are exposed through "$@".
+            return [shell, "-ic", 'codex "$@"', "codex", *fixed_args]
+
+        # Unknown shell syntax is safer to bypass than to guess.
+        return ["codex", *fixed_args]
 
     def _wrapper_script(self, profile: str) -> str:
         return (
