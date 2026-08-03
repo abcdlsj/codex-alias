@@ -183,17 +183,26 @@ def copy_all_sessions(src_home: Path, dst_home: Path) -> list[SessionCopyResult]
     return results
 
 
-def configured_model_provider(home: Path) -> str:
-    """Read the active top-level model provider from ``home/config.toml``."""
+def _read_config(home: Path) -> dict[str, object]:
+    """Read a Codex config file as a TOML object."""
     config_path = home / "config.toml"
     if not config_path.is_file():
         raise SessionRepairError(
-            f"model provider was not specified and config is missing: {config_path}"
+            f"Codex config is missing: {config_path}"
         )
     try:
         data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise SessionRepairError(f"failed to read config {config_path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise SessionRepairError(f"invalid Codex config: {config_path}")
+    return data
+
+
+def configured_model_provider(home: Path) -> str:
+    """Read the active top-level model provider from ``home/config.toml``."""
+    config_path = home / "config.toml"
+    data = _read_config(home)
 
     provider = data.get("model_provider")
     if not isinstance(provider, str) or not provider.strip():
@@ -201,6 +210,19 @@ def configured_model_provider(home: Path) -> str:
             f"top-level model_provider is missing from config: {config_path}"
         )
     return provider.strip()
+
+
+def configured_model(home: Path) -> str:
+    """Read the active top-level model from ``home/config.toml``."""
+    config_path = home / "config.toml"
+    data = _read_config(home)
+
+    model = data.get("model")
+    if not isinstance(model, str) or not model.strip():
+        raise SessionRepairError(
+            f"top-level model is missing from config: {config_path}"
+        )
+    return model.strip()
 
 
 def _next_backup_path(path: Path) -> Path:
@@ -231,23 +253,45 @@ def _replace_provider_field(
     return True
 
 
+def _replace_model_field(
+    container: object,
+    model: str,
+    previous: set[str],
+) -> bool:
+    if not isinstance(container, dict):
+        return False
+    old = container.get("model")
+    if old == model:
+        return False
+    if isinstance(old, str):
+        previous.add(old)
+    container["model"] = model
+    return True
+
+
 def fix_session_provider(
     session: SessionFile,
     provider: str,
     *,
+    model: str | None = None,
     from_provider: str | None = None,
     dry_run: bool = False,
 ) -> SessionFixResult:
-    """Normalize persisted provider metadata in a Codex JSONL session.
+    """Normalize persisted provider and model metadata in a Codex session.
 
     Every JSONL record is parsed before any write occurs. On a real repair the
     original is copied to a unique sibling backup and the replacement is
     written atomically. Only the two provider fields used by Codex session
-    bootstrap are changed; conversation payloads are left untouched.
+    bootstrap and the thread model are changed; conversation payloads are left
+    untouched.
     """
     provider = provider.strip()
     if not provider:
         raise SessionRepairError("provider must not be empty")
+    if model is not None:
+        model = model.strip()
+        if not model:
+            raise SessionRepairError("model must not be empty")
     if from_provider is not None:
         from_provider = from_provider.strip()
         if not from_provider:
@@ -261,8 +305,10 @@ def fix_session_provider(
 
     rewritten: list[str] = []
     previous: set[str] = set()
+    previous_models: set[str] = set()
     changed_records = 0
     changed_fields = 0
+    changed_model_fields = 0
 
     for line_number, line in enumerate(original_lines, start=1):
         body = line.rstrip("\r\n")
@@ -283,6 +329,7 @@ def fix_session_provider(
             )
 
         fields_in_record = 0
+        model_fields_in_record = 0
         payload = record.get("payload")
         if record.get("type") == "session_meta":
             fields_in_record += int(
@@ -300,10 +347,17 @@ def fix_session_provider(
                     previous,
                 )
             )
+            if model is not None:
+                model_fields_in_record += int(
+                    _replace_model_field(
+                        payload.get("thread_settings"), model, previous_models
+                    )
+                )
 
-        if fields_in_record:
+        if fields_in_record or model_fields_in_record:
             changed_records += 1
             changed_fields += fields_in_record
+            changed_model_fields += model_fields_in_record
             rewritten.append(
                 json.dumps(record, ensure_ascii=False, separators=(",", ":")) + newline
             )
@@ -311,7 +365,7 @@ def fix_session_provider(
             rewritten.append(line)
 
     backup_path: Path | None = None
-    if changed_fields and not dry_run:
+    if (changed_fields or changed_model_fields) and not dry_run:
         backup_path = _next_backup_path(path)
         try:
             shutil.copy2(path, backup_path)
@@ -343,6 +397,9 @@ def fix_session_provider(
         changed_fields=changed_fields,
         backup_path=backup_path,
         dry_run=dry_run,
+        model=model,
+        previous_models=tuple(sorted(previous_models)),
+        changed_model_fields=changed_model_fields,
     )
 
 
@@ -351,10 +408,11 @@ def fix_session_state_provider(
     session_id: str,
     provider: str,
     *,
+    model: str | None = None,
     from_provider: str | None = None,
     dry_run: bool = False,
 ) -> tuple[bool, Path | None]:
-    """Repair the provider in Codex's SQLite thread index, when present.
+    """Repair provider/model values in Codex's SQLite thread index, when present.
 
     Codex 0.145 reads ``threads.model_provider`` during resume before replaying
     the JSONL rollout. A consistent SQLite online backup is created before the
@@ -366,15 +424,30 @@ def fix_session_state_provider(
 
     try:
         connection = sqlite3.connect(database)
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(threads)")
+        }
+        if "model_provider" not in columns:
+            return False, None
+        selected_columns = ["model_provider"]
+        if model is not None and "model" in columns:
+            selected_columns.append("model")
         row = connection.execute(
-            "SELECT model_provider FROM threads WHERE id = ?", (session_id,)
+            f"SELECT {', '.join(selected_columns)} FROM threads WHERE id = ?",
+            (session_id,),
         ).fetchone()
         if row is None:
             return False, None
         old_provider = row[0]
-        if old_provider == provider:
-            return False, None
         if from_provider is not None and old_provider != from_provider:
+            return False, None
+        provider_changed = old_provider != provider
+        model_changed = (
+            model is not None
+            and "model" in columns
+            and row[1] != model
+        )
+        if not provider_changed and not model_changed:
             return False, None
         if dry_run:
             return True, None
@@ -387,10 +460,25 @@ def fix_session_state_provider(
             backup_connection.close()
 
         connection.execute("BEGIN IMMEDIATE")
+        assignments: list[str] = []
+        assignment_values: list[object] = []
+        if provider_changed:
+            assignments.append("model_provider = ?")
+            assignment_values.append(provider)
+        if model_changed:
+            assignments.append("model = ?")
+            assignment_values.append(model)
+        where = "id = ?"
+        where_values: list[object] = [session_id]
+        if provider_changed:
+            where += " AND model_provider = ?"
+            where_values.append(old_provider)
+        if model_changed:
+            where += " AND model = ?"
+            where_values.append(row[1])
         cursor = connection.execute(
-            "UPDATE threads SET model_provider = ? "
-            "WHERE id = ? AND model_provider = ?",
-            (provider, session_id, old_provider),
+            f"UPDATE threads SET {', '.join(assignments)} WHERE {where}",
+            [*assignment_values, *where_values],
         )
         connection.commit()
         if cursor.rowcount != 1:

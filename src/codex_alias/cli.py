@@ -195,9 +195,19 @@ def resume(
     else:
         target_home = mgr.profile_home(target_name, must_exist=True)
     target_label = next(label for value, label in choices if value == target_name)
+    should_fix = ui.confirm("Fix session provider and model for this profile?")
+    target_model = mgr.configured_model(target_home) if should_fix else None
 
     result = mgr.clone_session_for_profile(session_id, target_home)
     ui.render_clone_result(result, target_label)
+    if should_fix:
+        fix_result = mgr.fix_session_provider(
+            target_home,
+            result.session_id,
+            result.provider,
+            model=target_model,
+        )
+        ui.render_fix_result(fix_result)
     if no_launch:
         return
 
@@ -265,6 +275,10 @@ def import_(ctx: click.Context, session_id: str, target: str) -> None:
     help="Replacement provider (default: top-level model_provider in HOME/config.toml).",
 )
 @click.option(
+    "--model",
+    help="Replacement model.",
+)
+@click.option(
     "--from-provider",
     help="Only replace fields with this provider value.",
 )
@@ -275,10 +289,11 @@ def fix_session(
     session_id: str,
     home: str,
     provider: str | None,
+    model: str | None,
     from_provider: str | None,
     dry_run: bool,
 ) -> None:
-    """Repair stale provider metadata in one Codex session."""
+    """Repair stale provider and optional model metadata in one Codex session."""
     mgr = _mgr(ctx)
     target_home = mgr.resolve_home_ref(home).path
     target_provider = provider or mgr.configured_model_provider(target_home)
@@ -286,6 +301,7 @@ def fix_session(
         target_home,
         session_id,
         target_provider,
+        model=model,
         from_provider=from_provider,
         dry_run=dry_run,
     )

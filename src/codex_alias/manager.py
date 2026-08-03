@@ -276,12 +276,16 @@ class CodexAlias:
     def configured_model_provider(self, home: Path) -> str:
         return sessions_mod.configured_model_provider(home)
 
+    def configured_model(self, home: Path) -> str:
+        return sessions_mod.configured_model(home)
+
     def fix_session_provider(
         self,
         home: Path,
         query: str,
         provider: str,
         *,
+        model: str | None = None,
         from_provider: str | None = None,
         dry_run: bool = False,
     ) -> SessionFixResult:
@@ -289,6 +293,7 @@ class CodexAlias:
         result = sessions_mod.fix_session_provider(
             session,
             provider,
+            model=model,
             from_provider=from_provider,
             dry_run=dry_run,
         )
@@ -296,6 +301,7 @@ class CodexAlias:
             home,
             session.session_id,
             provider,
+            model=model,
             from_provider=from_provider,
             dry_run=dry_run,
         )

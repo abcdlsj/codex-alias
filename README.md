@@ -53,8 +53,9 @@ codexalias add <profile> [command-name]
 # Import one session from default ~/.codex into current/target home
 codexalias import <session-id> [target|@current]
 
-# Repair stale provider metadata (provider defaults to HOME/config.toml)
-codexalias fix-session <session-id> [home|@current] [--provider <provider>]
+# Repair stale provider/model metadata
+codexalias fix-session <session-id> [home|@current] \
+  [--provider <provider>] [--model <model>]
 
 # Copy a session for default/another profile, then resume the copy
 codexa resume <session-id> [--profile default|<profile>]
@@ -159,10 +160,10 @@ replaced with a symlink.
 
 ## Repairing a session
 
-Codex persists model-provider metadata both inside each JSONL session and in
-the `state_5.sqlite` thread index. If a provider is later renamed or removed,
-`codex resume` can fail before the TUI starts with `Model provider '<name>' not
-found`. Repair both persisted copies with:
+Codex persists model-provider and model metadata both inside each JSONL session
+and in the `state_5.sqlite` thread index. If a provider is later renamed or a
+profile uses a different model, `codex resume` can fail before the TUI starts.
+Repair both persisted copies with:
 
 ```bash
 # Preview the repair; "custom" is inferred from ~/.codex/config.toml
@@ -170,27 +171,32 @@ codexalias fix-session 019f8938-544e-7160-901c-af1ffb2657a5 --dry-run
 
 # Apply it, but only where the stale value is exactly "aicoding"
 codexalias fix-session 019f8938-544e-7160-901c-af1ffb2657a5 \
-  --from-provider aicoding
+  --from-provider aicoding \
+  --model deepseek-v4-pro
 ```
 
 The command validates every JSONL record before writing, creates unique
 `*.backup.N` copies for changed JSONL and SQLite files, atomically replaces the
 JSONL, and conditionally updates only the matching SQLite thread row. Use
 `--provider` to override the provider inferred from the selected home's
-top-level `model_provider` setting.
+top-level `model_provider` setting, and `--model` to repair the persisted model
+as well.
 
 ## Resuming with another profile
 
 `codexa resume <session-id>` shows a numbered Rich list containing
-`default` and every added profile. It always creates a new session ID, copies
-the JSONL, history, and SQLite thread metadata, changes the provider only in
-the copy, and launches Codex with the selected profile. The source session is
+`default` and every added profile. After the profile is selected, it asks
+whether to fix the copied session's provider and model. A `y` reads both
+values from the target profile's top-level `config.toml`, repairs the new
+session's JSONL and SQLite metadata, and then launches Codex. An `n` keeps the
+existing behavior and leaves the copied model unchanged. The source session is
 never modified. This also works when profiles share session storage through
 symlinks because the cloned session has a distinct ID.
 
-Use `--profile cpa` to skip the prompt or `--no-launch` to create the copy
-without starting Codex. The installed executable names are `codex-alias`,
-`codexa`, and `codexalias`.
+Use `--profile cpa` to skip the profile picker or `--no-launch` to create the
+copy without starting Codex. The fix confirmation is still shown after the
+profile is known. The installed executable names are `codex-alias`, `codexa`,
+and `codexalias`.
 
 ## Development
 

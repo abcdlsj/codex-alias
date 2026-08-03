@@ -66,7 +66,7 @@ class SessionCopyResult:
 
 @dataclass(frozen=True, slots=True)
 class SessionFixResult:
-    """Summary of a provider repair performed on one session file."""
+    """Summary of provider/model repairs performed on one session file."""
 
     session_id: str
     provider: str
@@ -77,6 +77,9 @@ class SessionFixResult:
     dry_run: bool
     state_changed: bool = False
     state_backup_path: Path | None = None
+    model: str | None = None
+    previous_models: tuple[str, ...] = ()
+    changed_model_fields: int = 0
 
 
 @dataclass(frozen=True, slots=True)

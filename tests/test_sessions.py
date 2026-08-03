@@ -147,6 +147,30 @@ def test_fix_session_provider_creates_backup_and_only_changes_metadata(
     assert records[2]["payload"]["text"] == "keep me unchanged"
 
 
+def test_fix_session_provider_updates_model_metadata(
+    mgr: CodexAlias,
+) -> None:
+    path = _provider_session(mgr.config.source_home, SID_A)
+
+    result = mgr.fix_session_provider(
+        mgr.config.source_home,
+        SID_A,
+        "deepseek",
+        model="deepseek-v4-pro",
+    )
+
+    assert result.changed_fields == 2
+    assert result.changed_model_fields == 1
+    assert result.previous_providers == ("aicoding", "custom")
+    assert result.previous_models == ("gpt-5.6-sol",)
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    assert records[0]["payload"]["model_provider"] == "deepseek"
+    assert records[1]["payload"]["thread_settings"] == {
+        "model": "deepseek-v4-pro",
+        "model_provider_id": "deepseek",
+    }
+
+
 def test_fix_session_provider_dry_run_does_not_write(mgr: CodexAlias) -> None:
     path = _provider_session(mgr.config.source_home, SID_A)
     original = path.read_text(encoding="utf-8")
@@ -181,10 +205,14 @@ def test_fix_session_provider_rejects_invalid_json_without_writing(
 def test_configured_model_provider(mgr: CodexAlias) -> None:
     mgr.config.source_home.mkdir(parents=True)
     (mgr.config.source_home / "config.toml").write_text(
-        'model_provider = "custom"\n[model_providers.custom]\nname = "Custom"\n',
+        'model = "deepseek-v4-pro"\n'
+        'model_provider = "custom"\n'
+        '[model_providers.custom]\n'
+        'name = "Custom"\n',
         encoding="utf-8",
     )
     assert mgr.configured_model_provider(mgr.config.source_home) == "custom"
+    assert mgr.configured_model(mgr.config.source_home) == "deepseek-v4-pro"
 
 
 def test_fix_session_provider_updates_sqlite_thread_state(mgr: CodexAlias) -> None:
@@ -216,6 +244,34 @@ def test_fix_session_provider_updates_sqlite_thread_state(mgr: CodexAlias) -> No
         assert connection.execute(
             "SELECT model_provider FROM threads WHERE id = ?", (SID_A,)
         ).fetchone() == ("aicoding",)
+
+
+def test_fix_session_provider_updates_sqlite_model(mgr: CodexAlias) -> None:
+    _provider_session(mgr.config.source_home, SID_A)
+    database = mgr.config.source_home / "state_5.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE threads ("
+            "id TEXT PRIMARY KEY, model_provider TEXT NOT NULL, model TEXT NOT NULL"
+            ")"
+        )
+        connection.execute(
+            "INSERT INTO threads (id, model_provider, model) VALUES (?, ?, ?)",
+            (SID_A, "aicoding", "gpt-5.6-sol"),
+        )
+
+    result = mgr.fix_session_provider(
+        mgr.config.source_home,
+        SID_A,
+        "deepseek",
+        model="deepseek-v4-pro",
+    )
+
+    assert result.state_changed is True
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT model_provider, model FROM threads WHERE id = ?", (SID_A,)
+        ).fetchone() == ("deepseek", "deepseek-v4-pro")
 
 
 def test_fix_session_provider_sqlite_dry_run_does_not_write(mgr: CodexAlias) -> None:
