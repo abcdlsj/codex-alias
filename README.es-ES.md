@@ -10,7 +10,7 @@ el historial permanezcan separados.
 Se distribuye como un paquete de Python con dos partes:
 
 - una biblioteca reutilizable sin interfaz de usuario (`codex_alias`) que realiza todo el trabajo en el sistema de archivos
-- una CLI con `rich` + `click` (`codexalias`) construida sobre ella
+- una CLI con `rich` + `click` (`codexa`) construida sobre ella
 
 ## Instalación
 
@@ -25,16 +25,17 @@ uv tool install .
 
 # Or work inside the project
 uv sync
-uv run codexalias doctor
+uv run codexa doctor
 ```
 
 Otros objetivos de `make`: `make test`, `make sync`, `make uninstall`, `make clean`
 (ejecute `make help` para ver la lista).
 
-`uv tool install .` coloca `codexalias` en su PATH. A partir de ahí:
+`uv tool install .` coloca `codexa` en su PATH e instala también los alias
+compatibles `codexalias` y `codex-alias`. A partir de ahí:
 
 ```bash
-codexalias add work
+codexa add work
 codex-work
 ```
 
@@ -45,7 +46,7 @@ Durante `add`, los prompts interactivos le permiten:
 4. Compartir sesiones con el directorio raíz (enlace simbólico)
 5. De lo contrario, migrar las sesiones al nuevo perfil
 
-Las elecciones se guardan como tipos de sincronización ordenados. Un `codexalias
+Las elecciones se guardan como tipos de sincronización ordenados. Un `codexa
 sync <profile>` posterior vuelve a ejecutar, en ese orden, el migrador
 correspondiente a cada tipo. Pase `--no-bootstrap` para omitir los prompts.
 
@@ -61,14 +62,14 @@ codexa profile manage rename <profile> <new-profile> \
 codexa profile manage remove <profile> [command-name] [--keep-data] [--yes]
 codexa profile manage refresh-wrappers
 
-# Los comandos de ciclo de vida de nivel superior siguen siendo alias compatibles
-codexalias add <profile> [command-name]
+# Los comandos de ciclo de vida de nivel superior siguen disponibles por compatibilidad
+codexa add <profile> [command-name]
 
 # Import one session from default ~/.codex into current/target home
-codexalias import <session-id> [target|@current]
+codexa import <session-id> [target|@current]
 
 # Repair stale provider metadata (provider defaults to HOME/config.toml)
-codexalias fix-session <session-id> [home|@current] [--provider <provider>]
+codexa fix-session <session-id> [home|@current] [--provider <provider>]
 
 # Copy a session for default/another profile, then resume the copy
 codexa resume <session-id> [--profile default|<profile>]
@@ -80,37 +81,37 @@ codexa detect
 codexa detect resume [codex args...]
 
 # Interactive session migration into the current home
-codexalias migrate session
+codexa migrate session
 
 # Copy all sessions from one home into another
-codexalias migrate copy <source|@source> [target|@current]
+codexa migrate copy <source|@source> [target|@current]
 
 # Copy one session from one home into another
-codexalias migrate one <source|@source> <session-id> [target|@current]
+codexa migrate one <source|@source> <session-id> [target|@current]
 
 # Share sessions with a source home via symlink (existing profile)
-codexalias share-sessions <profile> [source|@source]
+codexa share-sessions <profile> [source|@source]
 
 # Run codex once with a profile (without creating a wrapper)
-codexalias run <profile> [codex args...]
+codexa run <profile> [codex args...]
 
 # Listar perfiles (alias compatible)
-codexalias list
+codexa list
 
 # Imprimir la ruta absoluta del perfil (alias compatible)
-codexalias path <profile>
+codexa path <profile>
 
 # Eliminar un perfil (alias compatible)
-codexalias remove <profile> [command-name]
+codexa remove <profile> [command-name]
 
 # Environment and sanity checks
-codexalias doctor
+codexa doctor
 
 # Select root hooks for a profile
-codexalias hooks
+codexa hooks
 
 # Reapply the profile's saved migration types from the source home
-codexalias sync [profile] [--yes]
+codexa sync [profile] [--yes]
 ```
 
 `@source` hace referencia al directorio de origen configurado; `@current` hace referencia al
@@ -136,7 +137,7 @@ usa un nombre personalizado. Los comandos superiores `add`, `list`, `path`, `rem
   `CODEXALIAS_CODEX_CMD` para `run`, `resume` y los comandos de perfil generados
 - `CODEXALIAS_CODEX_ARGS`: argumentos fijos que se agregan antes en cada invocación de Codex
 - `CODEXALIAS_SOURCE_HOME`: directorio de origen utilizado por `add`/`@source` (predeterminado: `$CODEX_HOME` o `~/.codex`)
-- `CODEXALIAS_MANAGER_BIN_NAME`: nombre del binario del administrador utilizado por los comandos de perfil generados (predeterminado: `codexalias`)
+- `CODEXALIAS_MANAGER_BIN_NAME`: nombre del binario del administrador utilizado por los comandos de perfil generados (predeterminado: `codexalias`, un alias compatible)
 
 Para reutilizar un envoltorio que agregue automáticamente banderas `yolo`, ganchos o notificaciones:
 
@@ -178,7 +179,7 @@ las sesiones durante la creación (responda sí a "Share sessions with root home
 un perfil existente:
 
 ```bash
-codexalias share-sessions work
+codexa share-sessions work
 ```
 
 Esto crea un enlace simbólico de `~/.codex/profiles/work/sessions` (junto con `history.jsonl` y
@@ -196,10 +197,10 @@ found`. Repare ambas copias persistentes con:
 
 ```bash
 # Preview the repair; "custom" is inferred from ~/.codex/config.toml
-codexalias fix-session 019f8938-544e-7160-901c-af1ffb2657a5 --dry-run
+codexa fix-session 019f8938-544e-7160-901c-af1ffb2657a5 --dry-run
 
 # Apply it, but only where the stale value is exactly "aicoding"
-codexalias fix-session 019f8938-544e-7160-901c-af1ffb2657a5 \
+codexa fix-session 019f8938-544e-7160-901c-af1ffb2657a5 \
   --from-provider aicoding
 ```
 
@@ -222,7 +223,7 @@ independientemente de la respuesta a la pregunta de reparación. La regla actual
 para `gpt-5*` vacía el `reasoning.content` no vacío. Las reglas usan las
 capacidades del modelo y de la API, no nombres de proveedores codificados.
 
-El historial cifrado tiene un límite de portabilidad distinto. Codexalias
+El historial cifrado tiene un límite de portabilidad distinto. Codexa
 compara una huella normalizada `wire_api + base_url` cuando conoce ambos lados.
 Conserva el razonamiento cifrado entre alias del mismo backend, mantiene el
 registro de razonamiento externo (y su ordinal paginado) pero limpia
@@ -235,8 +236,8 @@ reglas en
 pérdida.
 
 Use `--profile cpa` para omitir el selector de perfil o `--no-launch` para crear
-la copia sin iniciar Codex. Los nombres de los ejecutables instalados son
-`codex-alias`, `codexa` y `codexalias`.
+la copia sin iniciar Codex. El ejecutable principal instalado es `codexa`, junto
+con los alias compatibles `codexalias` y `codex-alias`.
 
 `codexa detect` busca la sesión más reciente del directorio actual en el hogar
 fuente y en todos los perfiles, muestra el perfil detectado y la última

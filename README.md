@@ -8,7 +8,7 @@ history stay separated.
 It ships as a Python package with two parts:
 
 - a reusable, UI-free library (`codex_alias`) that does all the filesystem work
-- a `rich` + `click` CLI (`codexalias`) built on top of it
+- a `rich` + `click` CLI (`codexa`) built on top of it
 
 ## Install
 
@@ -23,16 +23,17 @@ uv tool install .
 
 # Or work inside the project
 uv sync
-uv run codexalias doctor
+uv run codexa doctor
 ```
 
 Other `make` targets: `make test`, `make sync`, `make uninstall`, `make clean`
 (run `make help` for the list).
 
-`uv tool install .` puts `codexalias` on your PATH. From there:
+`uv tool install .` puts `codexa` on your PATH and also installs the compatibility
+aliases `codexalias` and `codex-alias`. From there:
 
 ```bash
-codexalias add work
+codexa add work
 codex-work
 ```
 
@@ -44,7 +45,7 @@ During `add`, interactive prompts let you:
 5. Share sessions with the root home (symlink)
 6. Otherwise migrate sessions into the new profile
 
-The choices are recorded as ordered sync types. A later `codexalias sync
+The choices are recorded as ordered sync types. A later `codexa sync
 <profile>` re-runs the corresponding migration handlers in that order. Pass
 `--no-bootstrap` to skip the prompts.
 
@@ -60,14 +61,14 @@ codexa profile manage rename <profile> <new-profile> \
 codexa profile manage remove <profile> [command-name] [--keep-data] [--yes]
 codexa profile manage refresh-wrappers
 
-# The original top-level lifecycle commands remain compatible aliases
-codexalias add <profile> [command-name]
+# Top-level lifecycle commands remain available for compatibility
+codexa add <profile> [command-name]
 
 # Import one session from default ~/.codex into current/target home
-codexalias import <session-id> [target|@current]
+codexa import <session-id> [target|@current]
 
 # Repair stale provider/model metadata
-codexalias fix-session <session-id> [home|@current] \
+codexa fix-session <session-id> [home|@current] \
   [--provider <provider>] [--model <model>]
 
 # Copy a session for default/another profile, then resume the copy
@@ -80,74 +81,74 @@ codexa detect
 codexa detect resume [codex args...]
 
 # Interactive session migration into the current home
-codexalias migrate session
+codexa migrate session
 
 # Copy all sessions from one home into another
-codexalias migrate copy <source|@source> [target|@current]
+codexa migrate copy <source|@source> [target|@current]
 
 # Copy one session from one home into another
-codexalias migrate one <source|@source> <session-id> [target|@current]
+codexa migrate one <source|@source> <session-id> [target|@current]
 
 # Share sessions with a source home via symlink (existing profile)
-codexalias share-sessions <profile> [source|@source]
+codexa share-sessions <profile> [source|@source]
 
 # Run codex once with a profile (without creating a wrapper)
-codexalias run <profile> [codex args...]
+codexa run <profile> [codex args...]
 
 # Shortcut: run a profile and forward all remaining args to Codex
 codexa <profile> [codex args...]
 
 # List profiles (compatibility alias; prefer `profile manage list`)
-codexalias list
+codexa list
 
 # Print the absolute home path of a profile (compatibility alias)
-codexalias path <profile>
+codexa path <profile>
 
 # Remove a profile (compatibility alias)
-codexalias remove <profile> [command-name]
+codexa remove <profile> [command-name]
 
 # Keep the profile data and remove only the wrapper command
-codexalias remove <profile> [command-name] --keep-data
+codexa remove <profile> [command-name] --keep-data
 
 # Environment and sanity checks
-codexalias doctor
+codexa doctor
 
 # Select root hooks for a profile
-codexalias hooks
+codexa hooks
 
 # Reapply the profile's saved migration types from the source home
-codexalias sync [profile] [--yes]
+codexa sync [profile] [--yes]
 
 # One-shot sync one or more independently managed content types
-codexalias sync --all --type skills --source ~/.codex --yes
-codexalias sync --all --type plugins --type rules --type prompts --source ~/.codex --yes
+codexa sync --all --type skills --source ~/.codex --yes
+codexa sync --all --type plugins --type rules --type prompts --source ~/.codex --yes
 
 # Sync only selected skills; repeat --skill or use a file
-codexalias sync --all --type skills \
+codexa sync --all --type skills \
   --skill review-mr --skill domain-modeling --source ~/.codex --yes
-codexalias sync --all --type skills --skills-file ./skills.allowlist \
+codexa sync --all --type skills --skills-file ./skills.allowlist \
   --exclude-skill grilling --source ~/.codex --yes
 
-# Persist the selector for future `codexalias sync <profile>` calls
-codexalias sync --all --type skills --skill review-mr --save --source ~/.codex --yes
+# Persist the selector for future `codexa sync <profile>` calls
+codexa sync --all --type skills --skill review-mr --save --source ~/.codex --yes
 
 # Preview or clean stale user skills (never removes .system)
-codexalias sync --all --type skills --skill review-mr --dry-run --source ~/.codex
-codexalias sync --all --type skills --skill review-mr --prune-skills --source ~/.codex --yes
+codexa sync --all --type skills --skill review-mr --dry-run --source ~/.codex
+codexa sync --all --type skills --skill review-mr --prune-skills --source ~/.codex --yes
 
 # Show all independently selectable sync types
-codexalias sync --list-types
+codexa sync --list-types
 
 # Interactive skill table (selection is persisted and unselected user skills are removed)
-codexalias sync <profile> --select-skills --source ~/.codex --yes
+codexa sync <profile> --select-skills --source ~/.codex --yes
 
 # Machine/AI-readable inventory
-codexalias list --json
-codexalias sync --list-skills --json --source ~/.codex
-codexalias sync --list-types --json
+codexa list --json
+codexa sync --list-skills --json --source ~/.codex
+codexa sync --list-types --json
 
 # Enable global instruction sync for an existing profile, then sync it
-codexalias sync <profile> --instructions --yes
+codexa sync <profile> --instructions --yes
 ```
 
 `@source` refers to the configured source home; `@current` refers to the current
@@ -181,7 +182,7 @@ them is only necessary when the generated wrapper format itself changes.
   `CODEXALIAS_CODEX_CMD` for `run`, `resume`, and generated profile commands
 - `CODEXALIAS_CODEX_ARGS`: fixed arguments prepended to every Codex invocation
 - `CODEXALIAS_SOURCE_HOME`: source home used by `add`/`@source` (default: `$CODEX_HOME` or `~/.codex`)
-- `CODEXALIAS_MANAGER_BIN_NAME`: manager binary name used by generated profile commands (default: `codexalias`)
+- `CODEXALIAS_MANAGER_BIN_NAME`: manager binary name used by generated profile commands (default: `codexalias`, a compatibility alias)
 
 To explicitly override normal shell resolution with a standalone executable:
 
@@ -197,10 +198,10 @@ aliases and functions are inherited automatically.
 ## Hook sharing
 
 Codex reads hooks from `$CODEX_HOME/hooks.json`. Because each profile has its
-own `CODEX_HOME`, `codexalias add` offers a table of hooks from the configured
+own `CODEX_HOME`, `codexa add` offers a table of hooks from the configured
 source home (`$CODEXALIAS_SOURCE_HOME/hooks.json`, default `~/.codex/hooks.json`).
 Use Space to toggle a row, Enter to review the selection, and confirm to write
-it. The standalone `codexalias hooks` command first asks which profile to edit
+it. The standalone `codexa hooks` command first asks which profile to edit
 and then opens the same table. Enabled plugin hooks remain selectable even when
 the source home has no standalone `hooks.json`.
 
@@ -216,7 +217,7 @@ and `sessions_migrate` independently. The `bundle` type is available for the
 old all-in-one behavior. For backward compatibility, a profile whose saved
 state contains the historical `plugins` type still runs that bundle; an
 explicit `--type plugins` means only `plugins/` and `.plugins/`.
-Running `codexalias sync <profile>` walks the saved types in order.
+Running `codexa sync <profile>` walks the saved types in order.
 
 Use `--type TYPE` for a one-shot sync that does not change saved settings;
 repeat the option to run multiple types. Use `--all` (or `--all-profiles`) to
@@ -271,7 +272,7 @@ sessions during creation (answer yes to "Share sessions with root home") or for
 an existing profile:
 
 ```bash
-codexalias share-sessions work
+codexa share-sessions work
 ```
 
 This symlinks `~/.codex/profiles/work/sessions` (plus `history.jsonl` and the
@@ -289,10 +290,10 @@ Repair both persisted copies with:
 
 ```bash
 # Preview the repair; "custom" is inferred from ~/.codex/config.toml
-codexalias fix-session 019f8938-544e-7160-901c-af1ffb2657a5 --dry-run
+codexa fix-session 019f8938-544e-7160-901c-af1ffb2657a5 --dry-run
 
 # Apply it, but only where the stale value is exactly "aicoding"
-codexalias fix-session 019f8938-544e-7160-901c-af1ffb2657a5 \
+codexa fix-session 019f8938-544e-7160-901c-af1ffb2657a5 \
   --from-provider aicoding \
   --model deepseek-v4-pro
 ```
@@ -325,7 +326,7 @@ plaintext `reasoning.content`; GPT-5 Responses endpoints reject that replay
 shape. Rules use model and wire-API capabilities, not hard-coded provider
 names.
 
-Encrypted history has a separate portability boundary. Codexalias compares a
+Encrypted history has a separate portability boundary. Codexa compares a
 normalized `wire_api + base_url` backend fingerprint when both sides are known.
 It preserves encrypted reasoning for aliases of the same backend, and treats
 foreign encrypted reasoning as an explicitly reported lossy mapping without
@@ -344,8 +345,8 @@ their own UI.
 
 Use `--profile cpa` to skip the profile picker or `--no-launch` to create the
 copy without starting Codex. The fix confirmation is still shown after the
-profile is known. The installed executable names are `codex-alias`, `codexa`,
-and `codexalias`.
+profile is known. The installed executable is `codexa`, with compatibility
+aliases `codexalias` and `codex-alias` available as well.
 
 `codexa detect` searches the configured source home and every profile for the
 most recently updated session whose working directory is the current directory.
