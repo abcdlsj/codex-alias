@@ -19,6 +19,10 @@ class ProfileNotFoundError(CodexAliasError):
     """The requested profile does not exist on disk."""
 
 
+class ProfileConflictError(CodexAliasError):
+    """A profile or wrapper name is already in use."""
+
+
 class HomeNotFoundError(CodexAliasError):
     """A referenced Codex home / directory does not exist."""
 

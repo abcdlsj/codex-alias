@@ -454,6 +454,16 @@ def cli(ctx: click.Context) -> None:
     ctx.obj = CodexAlias(Config.from_env())
 
 
+@cli.group(name="profile")
+def profile_group() -> None:
+    """Profile operations."""
+
+
+@profile_group.group(name="manage")
+def profile_manage_group() -> None:
+    """Create, inspect, rename, and remove profiles."""
+
+
 @cli.command()
 @click.argument("profile")
 @click.argument("command_name", required=False)
@@ -695,6 +705,47 @@ def refresh_wrappers(ctx: click.Context) -> None:
         ui.success(f"Refreshed wrapper: {target}")
     if not targets:
         ui.info("No profiles found.")
+
+
+# The existing top-level profile lifecycle commands remain available as
+# compatibility aliases under ``profile manage``. Registering the command
+# objects keeps their prompts, options, and safety checks in one place.
+for _profile_manage_command in (add, list_, path, remove, refresh_wrappers):
+    profile_manage_group.add_command(_profile_manage_command)
+
+
+@profile_manage_group.command(name="rename")
+@click.argument("profile")
+@click.argument("new_profile")
+@click.option(
+    "--command-name",
+    help="Existing wrapper name (default: codex-<profile>).",
+)
+@click.option(
+    "--new-command-name",
+    help="New wrapper name (default: codex-<new-profile>).",
+)
+@click.pass_context
+def profile_manage_rename(
+    ctx: click.Context,
+    profile: str,
+    new_profile: str,
+    command_name: str | None,
+    new_command_name: str | None,
+) -> None:
+    """Rename PROFILE and preserve its data under NEW_PROFILE."""
+    result = _mgr(ctx).rename_profile(
+        profile,
+        new_profile,
+        command_name,
+        new_command_name,
+    )
+    ui.success(f"Renamed profile: {result.old_profile} -> {result.profile}")
+    ui.info(f"Profile home: {result.profile_path}")
+    if result.wrapper_renamed:
+        ui.success(f"Renamed wrapper: {result.old_wrapper_path} -> {result.wrapper_path}")
+    else:
+        ui.info(f"Wrapper not found: {result.old_wrapper_path}")
 
 
 @cli.command(name="hooks")

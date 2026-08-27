@@ -12,9 +12,9 @@ import stat
 from pathlib import Path
 
 from .config import Config
-from .errors import CodexAliasError, ProfileNotFoundError
+from .errors import CodexAliasError, ProfileConflictError, ProfileNotFoundError
 from .launcher import ProfileLauncher
-from .models import Profile, ProfileRemoveResult
+from .models import Profile, ProfileRemoveResult, ProfileRenameResult
 from .validation import validate_name
 
 
@@ -61,6 +61,106 @@ class ProfileStore:
         target.write_text(self.launcher.wrapper_script(profile), encoding="utf-8")
         target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
         return target
+
+    def rename_profile(
+        self,
+        profile: str,
+        new_profile: str,
+        command_name: str | None = None,
+        new_command_name: str | None = None,
+    ) -> ProfileRenameResult:
+        """Rename a profile home and update its generated wrapper safely."""
+        validate_name(profile, "profile")
+        validate_name(new_profile, "new profile")
+        if profile == new_profile:
+            raise ProfileConflictError(
+                f"profile already has the requested name: {profile}"
+            )
+
+        old_path = self.config.profile_path(profile)
+        new_path = self.config.profile_path(new_profile)
+        if not old_path.is_dir():
+            raise ProfileNotFoundError(f"profile not found: {old_path}")
+        if self._path_exists(new_path):
+            raise ProfileConflictError(f"profile already exists: {new_path}")
+
+        old_command = command_name or f"codex-{profile}"
+        new_command = new_command_name or f"codex-{new_profile}"
+        validate_name(old_command, "command name")
+        validate_name(new_command, "new command name")
+        old_wrapper = self.config.wrapper_path(old_command)
+        new_wrapper = self.config.wrapper_path(new_command)
+        if old_wrapper != new_wrapper and self._path_exists(new_wrapper):
+            raise ProfileConflictError(f"wrapper already exists: {new_wrapper}")
+
+        wrapper_exists = self._path_exists(old_wrapper)
+        if wrapper_exists and not old_wrapper.is_file():
+            raise CodexAliasError(f"wrapper is not a regular file: {old_wrapper}")
+
+        original_wrapper: bytes | None = None
+        original_mode: int | None = None
+        if wrapper_exists:
+            try:
+                original_wrapper = old_wrapper.read_bytes()
+                original_mode = old_wrapper.stat().st_mode
+            except OSError as exc:
+                raise CodexAliasError(
+                    f"could not read wrapper before renaming profile: {old_wrapper}"
+                ) from exc
+
+        home_moved = False
+        new_wrapper_written = False
+        old_wrapper_removed = False
+        try:
+            old_path.rename(new_path)
+            home_moved = True
+
+            if wrapper_exists:
+                script = self.launcher.wrapper_script(new_profile)
+                new_wrapper.write_text(script, encoding="utf-8")
+                new_wrapper_written = True
+                new_wrapper.chmod(original_mode or new_wrapper.stat().st_mode)
+                if old_wrapper != new_wrapper:
+                    old_wrapper.unlink()
+                    old_wrapper_removed = True
+        except OSError as exc:
+            if old_wrapper_removed and original_wrapper is not None:
+                try:
+                    old_wrapper.write_bytes(original_wrapper)
+                    if original_mode is not None:
+                        old_wrapper.chmod(original_mode)
+                except OSError:
+                    pass
+            if new_wrapper_written and old_wrapper != new_wrapper:
+                try:
+                    new_wrapper.unlink()
+                except OSError:
+                    pass
+            if home_moved:
+                try:
+                    new_path.rename(old_path)
+                except OSError:
+                    pass
+            if old_wrapper == new_wrapper and original_wrapper is not None:
+                try:
+                    old_wrapper.write_bytes(original_wrapper)
+                    if original_mode is not None:
+                        old_wrapper.chmod(original_mode)
+                except OSError:
+                    pass
+            raise CodexAliasError(
+                f"could not rename profile {profile!r} to {new_profile!r}: {exc}"
+            ) from exc
+
+        return ProfileRenameResult(
+            old_profile=profile,
+            profile=new_profile,
+            old_profile_path=old_path,
+            profile_path=new_path,
+            old_wrapper_path=old_wrapper,
+            wrapper_path=new_wrapper,
+            wrapper_renamed=wrapper_exists,
+        )
 
     def remove_wrapper(
         self, profile: str, command_name: str | None = None
@@ -146,3 +246,8 @@ class ProfileStore:
             return path.resolve()
         except OSError:
             return path.absolute()
+
+    @staticmethod
+    def _path_exists(path: Path) -> bool:
+        """Treat broken symlinks as occupied paths during lifecycle changes."""
+        return path.exists() or path.is_symlink()

@@ -7,6 +7,7 @@ from codex_alias import (
     CodexAliasError,
     Config,
     InvalidNameError,
+    ProfileConflictError,
     ProfileNotFoundError,
 )
 from codex_alias.models import HomeKind
@@ -26,6 +27,61 @@ def test_add_profile_creates_home_and_wrapper(mgr: CodexAlias) -> None:
 def test_add_profile_custom_command_name(mgr: CodexAlias) -> None:
     target = mgr.add_profile("side", "codex-sp")
     assert target.name == "codex-sp"
+
+
+def test_rename_profile_moves_home_and_updates_wrapper(mgr: CodexAlias) -> None:
+    wrapper = mgr.add_profile("work")
+    marker = mgr.config.profile_path("work") / "marker.txt"
+    marker.write_text("keep", encoding="utf-8")
+
+    result = mgr.rename_profile("work", "office")
+
+    assert result.old_profile == "work"
+    assert result.profile == "office"
+    assert result.wrapper_renamed is True
+    assert not mgr.config.profile_path("work").exists()
+    assert result.profile_path.is_dir()
+    assert (result.profile_path / "marker.txt").read_text() == "keep"
+    assert not wrapper.exists()
+    assert result.wrapper_path.is_file()
+    assert 'run office "$@"' in result.wrapper_path.read_text()
+
+
+def test_rename_profile_supports_custom_wrapper_name(mgr: CodexAlias) -> None:
+    old_wrapper = mgr.add_profile("work", "codex-local")
+
+    result = mgr.rename_profile(
+        "work",
+        "office",
+        command_name="codex-local",
+        new_command_name="codex-office-local",
+    )
+
+    assert result.wrapper_renamed is True
+    assert not old_wrapper.exists()
+    assert result.wrapper_path.name == "codex-office-local"
+    assert 'run office "$@"' in result.wrapper_path.read_text()
+
+
+def test_rename_profile_without_wrapper_preserves_home(mgr: CodexAlias) -> None:
+    mgr.add_profile("work")
+    mgr.remove_wrapper("work")
+
+    result = mgr.rename_profile("work", "office")
+
+    assert result.wrapper_renamed is False
+    assert result.profile_path.is_dir()
+    assert not result.wrapper_path.exists()
+
+
+def test_rename_profile_rejects_missing_or_existing_target(mgr: CodexAlias) -> None:
+    with pytest.raises(ProfileNotFoundError):
+        mgr.rename_profile("work", "office")
+
+    mgr.add_profile("work")
+    mgr.add_profile("office")
+    with pytest.raises(ProfileConflictError):
+        mgr.rename_profile("work", "office")
 
 
 @pytest.mark.parametrize("bad", ["", "has space", "../evil", "a/b"])

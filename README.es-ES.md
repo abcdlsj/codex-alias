@@ -52,7 +52,16 @@ correspondiente a cada tipo. Pase `--no-bootstrap` para omitir los prompts.
 ## Comandos
 
 ```bash
-# Create a wrapper command (default: codex-<profile>)
+# Gestionar directorios de perfil y sus comandos envoltorio
+codexa profile manage add <profile> [command-name]
+codexa profile manage list [--json] [--details]
+codexa profile manage path <profile>
+codexa profile manage rename <profile> <new-profile> \
+  [--command-name <old-wrapper>] [--new-command-name <new-wrapper>]
+codexa profile manage remove <profile> [command-name] [--keep-data] [--yes]
+codexa profile manage refresh-wrappers
+
+# Los comandos de ciclo de vida de nivel superior siguen siendo alias compatibles
 codexalias add <profile> [command-name]
 
 # Import one session from default ~/.codex into current/target home
@@ -85,13 +94,13 @@ codexalias share-sessions <profile> [source|@source]
 # Run codex once with a profile (without creating a wrapper)
 codexalias run <profile> [codex args...]
 
-# List profiles
+# Listar perfiles (alias compatible)
 codexalias list
 
-# Print the absolute home path of a profile
+# Imprimir la ruta absoluta del perfil (alias compatible)
 codexalias path <profile>
 
-# Remove a wrapper command (profile data is kept)
+# Eliminar un perfil (alias compatible)
 codexalias remove <profile> [command-name]
 
 # Environment and sanity checks
@@ -107,6 +116,16 @@ codexalias sync [profile] [--yes]
 `@source` hace referencia al directorio de origen configurado; `@current` hace referencia al
 `CODEX_HOME` actual (volviendo al directorio de origen cuando no está configurado). También funciona
 usar un nombre de perfil sin más o una ruta absoluta en cualquier lugar donde se espere un directorio.
+
+`codexa profile manage remove` pide confirmación antes de eliminar el directorio del perfil
+(autenticación, configuración, sesiones y el resto de sus datos). Use `--yes` para omitirla o
+`--keep-data` para conservar los datos y eliminar solo el envoltorio. No se permite eliminar el
+directorio de origen configurado ni el `CODEX_HOME` actual.
+
+`codexa profile manage rename` mueve el directorio del perfil sin modificar sus datos y actualiza
+el envoltorio generado. Use `--command-name` y `--new-command-name` si el envoltorio existente
+usa un nombre personalizado. Los comandos superiores `add`, `list`, `path`, `remove` y
+`refresh-wrappers` siguen disponibles como alias compatibles.
 
 ## Variables de entorno
 

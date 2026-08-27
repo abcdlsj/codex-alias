@@ -84,6 +84,55 @@ def test_run_help_before_profile_still_shows_manager_help() -> None:
     assert "Run codex once under PROFILE" in result.output
 
 
+def test_profile_manage_lifecycle_commands(tmp_path) -> None:
+    env = _env(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        ["profile", "manage", "add", "work", "--no-bootstrap"],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "profiles" / "work").is_dir()
+    assert (tmp_path / "bin" / "codex-work").is_file()
+
+    result = runner.invoke(
+        cli,
+        ["profile", "manage", "rename", "work", "office"],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    assert "Renamed profile: work -> office" in result.output
+    assert (tmp_path / "profiles" / "office").is_dir()
+    assert (tmp_path / "bin" / "codex-office").is_file()
+
+    result = runner.invoke(
+        cli,
+        ["profile", "manage", "list", "--json"],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == [
+        {
+            "name": "office",
+            "path": str(tmp_path / "profiles" / "office"),
+            "sessions_shared": False,
+            "sync_types": [],
+            "skill_sync": None,
+        }
+    ]
+
+    result = runner.invoke(
+        cli,
+        ["profile", "manage", "remove", "office", "--yes"],
+        env=env,
+    )
+    assert result.exit_code == 0, result.output
+    assert not (tmp_path / "profiles" / "office").exists()
+    assert not (tmp_path / "bin" / "codex-office").exists()
+
+
 def test_detect_reports_profile_and_last_output(monkeypatch, tmp_path) -> None:
     cwd = tmp_path / "repo"
     cwd.mkdir()

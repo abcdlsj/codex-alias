@@ -20,6 +20,7 @@ from .models import (
     LinkAction,
     Profile,
     ProfileRemoveResult,
+    ProfileRenameResult,
     SessionCopyResult,
     SessionCloneResult,
     SessionFile,
@@ -92,6 +93,21 @@ class CodexAlias:
     def add_profile(self, profile: str, command_name: str | None = None) -> Path:
         """Create a profile home and its wrapper command; return wrapper path."""
         return self.profile_store.add_profile(profile, command_name)
+
+    def rename_profile(
+        self,
+        profile: str,
+        new_profile: str,
+        command_name: str | None = None,
+        new_command_name: str | None = None,
+    ) -> ProfileRenameResult:
+        """Rename a profile home and its generated wrapper."""
+        return self.profile_store.rename_profile(
+            profile,
+            new_profile,
+            command_name,
+            new_command_name,
+        )
 
     def root_hooks_path(self) -> Path:
         """Return the hooks file belonging to the configured source home."""

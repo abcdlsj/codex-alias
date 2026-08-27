@@ -51,7 +51,16 @@ The choices are recorded as ordered sync types. A later `codexalias sync
 ## Commands
 
 ```bash
-# Create a wrapper command (default: codex-<profile>)
+# Manage profile homes and their wrapper commands (default wrapper: codex-<profile>)
+codexa profile manage add <profile> [command-name]
+codexa profile manage list [--json] [--details]
+codexa profile manage path <profile>
+codexa profile manage rename <profile> <new-profile> \
+  [--command-name <old-wrapper>] [--new-command-name <new-wrapper>]
+codexa profile manage remove <profile> [command-name] [--keep-data] [--yes]
+codexa profile manage refresh-wrappers
+
+# The original top-level lifecycle commands remain compatible aliases
 codexalias add <profile> [command-name]
 
 # Import one session from default ~/.codex into current/target home
@@ -88,13 +97,13 @@ codexalias run <profile> [codex args...]
 # Shortcut: run a profile and forward all remaining args to Codex
 codexa <profile> [codex args...]
 
-# List profiles
+# List profiles (compatibility alias; prefer `profile manage list`)
 codexalias list
 
-# Print the absolute home path of a profile
+# Print the absolute home path of a profile (compatibility alias)
 codexalias path <profile>
 
-# Remove a profile: its wrapper command and profile data
+# Remove a profile (compatibility alias)
 codexalias remove <profile> [command-name]
 
 # Keep the profile data and remove only the wrapper command
@@ -145,11 +154,17 @@ codexalias sync <profile> --instructions --yes
 `CODEX_HOME` (falling back to the source home when unset). A bare profile name or
 an absolute path also works anywhere a home is expected.
 
-`remove` prompts for confirmation before deleting a profile home (auth, config,
+`codexa profile manage remove` prompts for confirmation before deleting a profile home (auth, config,
 sessions, and everything else under the profile). Pass `--yes` to skip the
 prompt or `--keep-data` to keep the home and only remove the wrapper. Deleting a
 profile that is the configured source home or the current `CODEX_HOME` is
 refused.
+
+`profile manage rename` moves the profile home without changing its data and
+updates the generated wrapper. Use the wrapper-name options when the existing
+wrapper was created with a custom command name. The top-level `add`, `list`,
+`path`, `remove`, and `refresh-wrappers` commands remain available as
+compatibility aliases.
 
 By default, profile commands resolve `codex` through the user's login shell, as
 if `codex ...` had been entered directly. This preserves fish/bash/zsh functions

@@ -56,6 +56,19 @@ class ProfileRemoveResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileRenameResult:
+    """Outcome of renaming a profile and, when present, its wrapper."""
+
+    old_profile: str
+    profile: str
+    old_profile_path: Path
+    profile_path: Path
+    old_wrapper_path: Path
+    wrapper_path: Path
+    wrapper_renamed: bool
+
+
+@dataclass(frozen=True, slots=True)
 class SessionFile:
     """A single Codex session record on disk."""
 
