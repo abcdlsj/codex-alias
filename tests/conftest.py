@@ -19,6 +19,16 @@ def config(tmp_path: Path) -> Config:
     )
 
 
+@pytest.fixture(autouse=True)
+def isolate_cli_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Keep CLI tests from creating profiles or wrappers in the real home."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.setenv("CODEXALIAS_SOURCE_HOME", str(tmp_path / ".codex"))
+    monkeypatch.setenv("CODEXALIAS_PROFILE_ROOT", str(tmp_path / "profiles"))
+    monkeypatch.setenv("CODEXALIAS_BIN_DIR", str(tmp_path / "bin"))
+
+
 @pytest.fixture()
 def mgr(config: Config, monkeypatch: pytest.MonkeyPatch) -> CodexAlias:
     # Keep both CODEX_HOME and the canonical HOME/.codex source isolated.
