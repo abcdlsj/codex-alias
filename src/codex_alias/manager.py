@@ -186,10 +186,10 @@ class CodexAlias:
         return self.launcher.run_argv(profile, args)
 
     def resume_argv(
-        self, home: Path, session_id: str
+        self, home: Path, session_id: str, args: list[str] | None = None
     ) -> tuple[list[str], dict[str, str]]:
         """Build a resume invocation through the configured Codex wrapper."""
-        return self.launcher.resume_argv(home, session_id)
+        return self.launcher.resume_argv(home, session_id, args)
 
     # Kept as compatibility shims for callers that used the old internals.
     def _codex_argv(self, args: list[str]) -> list[str]:

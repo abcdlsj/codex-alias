@@ -285,8 +285,10 @@ as well.
 
 ## Resuming with another profile
 
-`codexa resume <session-id>` shows a numbered Rich list containing
-`default` and every added profile. After the profile is selected, it asks
+`codexa resume <session-id> [codex args...]` shows a numbered Rich list
+containing `default` and every added profile. Arguments after the session id
+are forwarded to the final Codex resume command, for example
+`codexa resume <session-id> --profile luna-high --yolo`. After the profile is selected, it asks
 whether to fix the copied session's provider and model. A `y` reads both
 values from the target profile's top-level `config.toml`, repairs the new
 session's JSONL and SQLite metadata, and then launches Codex. Profiles using

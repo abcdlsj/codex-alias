@@ -492,8 +492,9 @@ def run(ctx: click.Context, profile: str, codex_args: tuple[str, ...]) -> None:
     os.execvpe(argv[0], argv, env)
 
 
-@cli.command()
+@cli.command(context_settings={"ignore_unknown_options": True})
 @click.argument("session_id")
+@click.argument("codex_args", nargs=-1, type=click.UNPROCESSED)
 @click.option(
     "--profile",
     help="Target profile name, or 'default'. Prompts with a list when omitted.",
@@ -505,7 +506,11 @@ def run(ctx: click.Context, profile: str, codex_args: tuple[str, ...]) -> None:
 )
 @click.pass_context
 def resume(
-    ctx: click.Context, session_id: str, profile: str | None, no_launch: bool
+    ctx: click.Context,
+    session_id: str,
+    codex_args: tuple[str, ...],
+    profile: str | None,
+    no_launch: bool,
 ) -> None:
     """Copy a session for a selected profile, then resume the copy."""
     mgr = _mgr(ctx)
@@ -548,7 +553,7 @@ def resume(
         return
 
     ui.info(f"Resuming copied session {result.session_id} ...")
-    argv, env = mgr.resume_argv(target_home, result.session_id)
+    argv, env = mgr.resume_argv(target_home, result.session_id, list(codex_args))
     os.execvpe(argv[0], argv, env)
 
 

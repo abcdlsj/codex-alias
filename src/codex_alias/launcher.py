@@ -30,10 +30,10 @@ class ProfileLauncher:
         return self._with_home(profile_path, args)
 
     def resume_argv(
-        self, home: Path, session_id: str
+        self, home: Path, session_id: str, args: list[str] | None = None
     ) -> tuple[list[str], dict[str, str]]:
         """Build a resume launch under an already-resolved home."""
-        return self._with_home(home, ["resume", session_id])
+        return self._with_home(home, ["resume", session_id, *(args or [])])
 
     def wrapper_script(self, profile: str) -> str:
         """Return the generated shell wrapper for ``profile``."""

@@ -137,8 +137,8 @@ def test_run_argv_sets_isolated_home(mgr: CodexAlias) -> None:
 
 def test_resume_argv_uses_configured_wrapper(mgr: CodexAlias) -> None:
     home = mgr.config.profile_root / "work"
-    argv, env = mgr.resume_argv(home, "session-id")
-    assert argv == ["codex", "resume", "session-id"]
+    argv, env = mgr.resume_argv(home, "session-id", ["--yolo", "--model", "gpt-5"])
+    assert argv == ["codex", "resume", "session-id", "--yolo", "--model", "gpt-5"]
     assert env["CODEX_HOME"] == str(home)
 
 

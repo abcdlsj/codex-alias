@@ -172,7 +172,7 @@ def test_resume_can_fix_provider_and_model_before_launch(
     monkeypatch.setattr("codex_alias.cli.os.execvpe", fake_execvpe)
     result = CliRunner().invoke(
         cli,
-        ["resume", SID, "--profile", "deepseek"],
+        ["resume", SID, "--profile", "deepseek", "--yolo"],
         input="y\n",
         env={
             "HOME": str(tmp_path),
@@ -183,6 +183,7 @@ def test_resume_can_fix_provider_and_model_before_launch(
 
     assert result.exit_code == 0, result.output
     assert captured["argv"][0:2] == ["codex", "resume"]
+    assert captured["argv"][-1] == "--yolo"
     copied = next(target.glob("sessions/**/*.jsonl"))
     records = [json.loads(line) for line in copied.read_text().splitlines()]
     assert records[0]["payload"]["model_provider"] == "deepseek"
