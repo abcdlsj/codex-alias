@@ -22,6 +22,7 @@ from rich.text import Text
 
 from .models import (
     CopyStatus,
+    DetectedSession,
     DoctorReport,
     HomeRef,
     HookOption,
@@ -191,6 +192,20 @@ def render_clone_result(result: SessionCloneResult, target_label: str) -> None:
         warn(f"LOSSY     cleared backend-bound fields: {mappings}")
     for warning in result.mapping_warnings:
         warn(f"Session history diagnostic: {warning}")
+
+
+def render_detected_session(result: DetectedSession) -> None:
+    """Render profile/session detection without interpreting output as markup."""
+    heading("Detected previous session")
+    info(f"PROFILE  {result.profile or '(unknown)'}")
+    info(f"SESSION  {result.session_id}")
+    info(f"CWD      {result.cwd}")
+    info(f"ROLLOUT  {result.path}")
+    if result.last_output:
+        console.print("[bold cyan]LAST OUTPUT[/]")
+        console.print(Text(result.last_output))
+    else:
+        warn("No assistant output found in the session.")
 
 
 def render_doctor(report: DoctorReport) -> None:

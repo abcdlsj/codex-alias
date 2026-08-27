@@ -64,6 +64,29 @@ class SessionFile:
     relative_path: str
 
 
+@dataclass(frozen=True, slots=True)
+class DetectedSession:
+    """The most recent session found for a working directory."""
+
+    session_id: str
+    profile: str | None
+    home: Path
+    path: Path
+    cwd: Path
+    last_output: str | None = None
+    updated_at: float | None = None
+
+    @property
+    def output(self) -> str | None:
+        """Compatibility alias for callers that call the final text output."""
+        return self.last_output
+
+    @property
+    def profile_name(self) -> str | None:
+        """Compatibility alias for the inferred profile name."""
+        return self.profile
+
+
 class CopyStatus(Enum):
     COPIED = "copied"
     SKIPPED = "skipped"  # already present, identical content

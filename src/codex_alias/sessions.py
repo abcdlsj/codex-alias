@@ -17,6 +17,7 @@ import sqlite3
 import tempfile
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -181,6 +182,194 @@ def resolve_session_file(home: Path, query: str) -> SessionFile:
     if not matches:
         raise SessionNotFoundError(f"session not found in {home}: {query}")
     raise AmbiguousSessionError(query, [m.relative_path for m in matches])
+
+
+def _timestamp_value(value: object) -> float | None:
+    """Normalize the timestamp forms used by Codex's SQLite/JSON stores."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        # SQLite stores both seconds and milliseconds depending on the column.
+        return number / 1000 if number > 10_000_000_000 else number
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    try:
+        return _timestamp_value(float(text))
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.timestamp()
+
+
+def _path_from_value(value: object) -> Path | None:
+    """Turn a stored path (including a ``file://`` URI) into a Path."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.startswith("file://"):
+        parsed = urlsplit(text)
+        text = parsed.path
+    if not text:
+        return None
+    return Path(text).expanduser()
+
+
+def inspect_session_metadata(
+    path: Path,
+) -> tuple[Path | None, float | None, str | None]:
+    """Read a rollout's working directory, timestamp, and provider.
+
+    Detection is deliberately tolerant: an incomplete or partially-written
+    rollout is ignored by callers instead of making the diagnostic command
+    fail.  Full session migration continues to use the stricter validators.
+    """
+    cwd: Path | None = None
+    timestamp: float | None = None
+    provider: str | None = None
+    try:
+        with path.open("r", encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    record = json.loads(line)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                record_timestamp = _timestamp_value(record.get("timestamp"))
+                if record_timestamp is not None:
+                    timestamp = record_timestamp
+                if record.get("type") != "session_meta":
+                    continue
+                payload = record.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                if cwd is None:
+                    cwd = _path_from_value(payload.get("cwd"))
+                value = payload.get("model_provider")
+                if isinstance(value, str) and value.strip():
+                    provider = value.strip()
+                if timestamp is None:
+                    timestamp = _timestamp_value(payload.get("timestamp"))
+                # session_meta is normally the first record; once all useful
+                # fields are present there is no reason to scan the rest.
+                if cwd is not None and timestamp is not None:
+                    break
+    except (OSError, UnicodeError):
+        return None, None, None
+    if timestamp is None:
+        try:
+            timestamp = path.stat().st_mtime
+        except OSError:
+            timestamp = None
+    return cwd, timestamp, provider
+
+
+def _message_text(value: object) -> str | None:
+    """Extract output text from a message/content value."""
+    if isinstance(value, str):
+        return value if value.strip() else None
+    if isinstance(value, dict):
+        for key in ("text", "message", "last_agent_message", "content"):
+            candidate = _message_text(value.get(key))
+            if candidate is not None:
+                return candidate
+        return None
+    if not isinstance(value, list):
+        return None
+    chunks: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            if item:
+                chunks.append(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type")
+        if item_type is not None and item_type not in {
+            "output_text",
+            "text",
+            "assistant_message",
+            "message",
+        }:
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text:
+            chunks.append(text)
+    text = "\n".join(chunks)
+    return text if text.strip() else None
+
+
+def last_session_output(path: Path) -> str | None:
+    """Return the last user-visible assistant output in a rollout.
+
+    Codex has used both ``response_item`` assistant messages and
+    ``event_msg/task_complete.last_agent_message`` over its releases.  Keep
+    reasoning, tool calls, and encrypted content out of this view.
+    """
+    latest: str | None = None
+    try:
+        with path.open("r", encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    record = json.loads(line)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                payload = record.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                record_type = record.get("type")
+                payload_type = payload.get("type")
+
+                candidate: str | None = None
+                if record_type == "response_item":
+                    if payload_type == "message":
+                        role = payload.get("role")
+                        if role in (None, "assistant"):
+                            candidate = _message_text(payload.get("content"))
+                    elif payload_type in {
+                        "output_text",
+                        "assistant_message",
+                    }:
+                        candidate = _message_text(
+                            payload.get("text") or payload.get("message")
+                        )
+                elif record_type == "event_msg":
+                    if payload_type in {
+                        "task_complete",
+                        "turn_complete",
+                        "agent_message",
+                        "assistant_message",
+                    }:
+                        candidate = _message_text(
+                            payload.get("last_agent_message")
+                            or payload.get("message")
+                            or payload.get("text")
+                        )
+                    elif payload_type == "item_completed":
+                        item = payload.get("item")
+                        if isinstance(item, dict) and item.get("type") in {
+                            "AgentMessage",
+                            "agent_message",
+                            "assistant_message",
+                            "message",
+                        }:
+                            candidate = _message_text(
+                                item.get("text")
+                                or item.get("message")
+                                or item.get("content")
+                            )
+                if candidate is not None:
+                    latest = candidate.strip()
+    except (OSError, UnicodeError):
+        return None
+    return latest
 
 
 def _append_history(src_home: Path, dst_home: Path, session_id: str) -> None:

@@ -33,6 +33,7 @@ from .errors import (
 from .manager import REF_CURRENT, REF_SOURCE, CodexAlias, validate_name
 from .models import (
     CopyStatus,
+    DetectedSession,
     DoctorReport,
     HomeKind,
     HomeRef,
@@ -58,6 +59,7 @@ __all__ = [
     "REF_SOURCE",
     # models
     "CopyStatus",
+    "DetectedSession",
     "DoctorReport",
     "HomeKind",
     "HomeRef",

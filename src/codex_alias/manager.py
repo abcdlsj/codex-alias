@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .config import Config
 from .models import (
+    DetectedSession,
     DoctorReport,
     HomeRef,
     HookOption,
@@ -232,6 +233,14 @@ class CodexAlias:
     def find_session(self, query: str) -> tuple[Path, SessionFile]:
         """Find a session across default and profile homes, de-duplicating links."""
         return self.session_service.find_session(query)
+
+    def detect_last_session(self, cwd: Path | None = None) -> DetectedSession | None:
+        """Detect the latest profile session associated with a working directory."""
+        return self.session_service.detect_last_session(cwd)
+
+    def detect_session(self, cwd: Path | None = None) -> DetectedSession | None:
+        """Short alias for :meth:`detect_last_session`."""
+        return self.session_service.detect_last_session(cwd)
 
     def _backend_identity(
         self, provider: str | None, preferred_home: Path

@@ -493,11 +493,29 @@ def run(ctx: click.Context, profile: str, codex_args: tuple[str, ...]) -> None:
 
 
 @cli.command(context_settings={"ignore_unknown_options": True})
-@click.argument("session_id")
+@click.argument("session_id", required=False)
 @click.argument("codex_args", nargs=-1, type=click.UNPROCESSED)
 @click.option(
     "--profile",
     help="Target profile name, or 'default'. Prompts with a list when omitted.",
+)
+@click.option(
+    "--detect",
+    "detect_mode",
+    is_flag=True,
+    help="Detect the latest session for the current directory and show its output.",
+)
+@click.option(
+    "--detach",
+    "detach_mode",
+    is_flag=True,
+    help="Alias for --detect (kept for compatibility with the old spelling).",
+)
+@click.option(
+    "--cwd",
+    "detect_cwd",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    help="Directory to inspect in detect mode (defaults to the current directory).",
 )
 @click.option(
     "--no-launch",
@@ -507,13 +525,31 @@ def run(ctx: click.Context, profile: str, codex_args: tuple[str, ...]) -> None:
 @click.pass_context
 def resume(
     ctx: click.Context,
-    session_id: str,
+    session_id: str | None,
     codex_args: tuple[str, ...],
     profile: str | None,
+    detect_mode: bool,
+    detach_mode: bool,
+    detect_cwd: Path | None,
     no_launch: bool,
 ) -> None:
-    """Copy a session for a selected profile, then resume the copy."""
+    """Resume a copied session, or detect the latest session for this directory."""
     mgr = _mgr(ctx)
+    if detect_mode or detach_mode or (session_id or "").casefold() in {
+        "detect",
+        "detach",
+    }:
+        detected = mgr.detect_last_session(detect_cwd)
+        if detected is None:
+            location = detect_cwd or Path.cwd()
+            ui.warn(f"No previous Codex session found for {location}.")
+            return
+        ui.render_detected_session(detected)
+        return
+
+    if not session_id:
+        raise click.UsageError("Missing SESSION_ID (or use 'detect').", ctx)
+
     profiles = mgr.list_profiles()
     choices = [("default", f"default ({mgr.default_source_home()})")]
     choices.extend((item.name, f"{item.name} ({item.path})") for item in profiles)

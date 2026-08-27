@@ -64,6 +64,9 @@ codexalias fix-session <session-id> [home|@current] \
 # Copy a session for default/another profile, then resume the copy
 codexa resume <session-id> [--profile default|<profile>]
 
+# Detect the latest session used in the current directory and show its final output
+codexa resume detect
+
 # Interactive session migration into the current home
 codexalias migrate session
 
@@ -325,6 +328,13 @@ Use `--profile cpa` to skip the profile picker or `--no-launch` to create the
 copy without starting Codex. The fix confirmation is still shown after the
 profile is known. The installed executable names are `codex-alias`, `codexa`,
 and `codexalias`.
+
+`codexa resume detect` searches the configured source home and every profile
+for the most recently updated session whose working directory is the current
+directory. It reports the inferred profile, session id, rollout path, and last
+assistant output. Use `--cwd PATH` to inspect another directory. The historical
+spelling `detach` and the `--detach` option are accepted as aliases for
+`detect`.
 
 ## Development
 

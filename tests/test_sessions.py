@@ -27,6 +27,109 @@ def test_list_and_resolve_session(mgr: CodexAlias) -> None:
     assert mgr.resolve_session(src, SID_A).session_id == SID_A
 
 
+def test_detect_last_session_infers_profile_and_final_output(
+    mgr: CodexAlias, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    profile = mgr.config.profile_path("work")
+    profile.mkdir(parents=True)
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    session_path = write_session(
+        profile,
+        SID_A,
+        content=(
+            json.dumps(
+                {
+                    "timestamp": "2026-08-27T10:00:00Z",
+                    "type": "session_meta",
+                    "payload": {
+                        "id": SID_A,
+                        "cwd": str(cwd),
+                        "model_provider": "custom",
+                    },
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "first"}],
+                    },
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "type": "event_msg",
+                    "payload": {
+                        "type": "task_complete",
+                        "last_agent_message": "final answer",
+                    },
+                }
+            )
+            + "\n"
+        ),
+    )
+    with sqlite3.connect(profile / "state_5.sqlite") as connection:
+        connection.execute(
+            "CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, updated_at_ms INTEGER)"
+        )
+        connection.execute(
+            "INSERT INTO threads VALUES (?, ?, ?, ?)",
+            (SID_A, str(session_path), str(cwd), 1_800_000_000_000),
+        )
+
+    monkeypatch.chdir(tmp_path)
+    detected = mgr.detect_last_session(cwd)
+
+    assert detected is not None
+    assert detected.profile == "work"
+    assert detected.session_id == SID_A
+    assert detected.path == session_path
+    assert detected.last_output == "final answer"
+
+
+def test_detect_last_session_falls_back_to_rollout_metadata(
+    mgr: CodexAlias, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    session_path = write_session(
+        mgr.config.source_home,
+        SID_B,
+        content=json.dumps(
+            {
+                "timestamp": "2026-08-27T10:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": SID_B, "cwd": str(cwd)},
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "done"}],
+                },
+            }
+        )
+        + "\n",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    detected = mgr.detect_last_session(cwd)
+
+    assert detected is not None
+    assert detected.profile == "default"
+    assert detected.session_id == SID_B
+    assert detected.last_output == "done"
+
+
 def test_resolve_missing_session_raises(mgr: CodexAlias) -> None:
     mgr.config.source_home.mkdir(parents=True)
     write_session(mgr.config.source_home, SID_A)

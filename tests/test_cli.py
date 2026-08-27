@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 from click.testing import CliRunner
 
@@ -81,6 +82,67 @@ def test_run_help_before_profile_still_shows_manager_help() -> None:
 
     assert result.exit_code == 0
     assert "Run codex once under PROFILE" in result.output
+
+
+def test_resume_detect_reports_profile_and_last_output(monkeypatch, tmp_path) -> None:
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    profile = tmp_path / "profiles" / "work"
+    profile.mkdir(parents=True)
+    sid = SID
+    session_dir = profile / "sessions" / "2026" / "08" / "27"
+    session_dir.mkdir(parents=True)
+    session_path = session_dir / f"rollout-2026-08-27T10-00-00-{sid}.jsonl"
+    session_path.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-08-27T10:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": sid, "cwd": str(cwd)},
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "all done"}],
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with sqlite3.connect(profile / "state_5.sqlite") as connection:
+        connection.execute(
+            "CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, updated_at_ms INTEGER)"
+        )
+        connection.execute(
+            "INSERT INTO threads VALUES (?, ?, ?, ?)",
+            (sid, str(session_path), str(cwd), 1_800_000_000_000),
+        )
+
+    monkeypatch.chdir(cwd)
+    result = CliRunner().invoke(
+        cli,
+        ["resume", "detect"],
+        env=_env(tmp_path),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "PROFILE  work" in result.output
+    assert sid in result.output
+    assert "all done" in result.output
+
+
+def test_resume_detach_is_accepted_as_detect_alias(monkeypatch, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli, ["resume", "detach"], env=_env(tmp_path))
+
+    assert result.exit_code == 0, result.output
+    assert "No previous Codex session found" in result.output
 
 
 def _env(tmp_path) -> dict[str, str]:
