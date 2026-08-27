@@ -493,29 +493,11 @@ def run(ctx: click.Context, profile: str, codex_args: tuple[str, ...]) -> None:
 
 
 @cli.command(context_settings={"ignore_unknown_options": True})
-@click.argument("session_id", required=False)
+@click.argument("session_id")
 @click.argument("codex_args", nargs=-1, type=click.UNPROCESSED)
 @click.option(
     "--profile",
     help="Target profile name, or 'default'. Prompts with a list when omitted.",
-)
-@click.option(
-    "--detect",
-    "detect_mode",
-    is_flag=True,
-    help="Detect the latest session for the current directory and show its output.",
-)
-@click.option(
-    "--detach",
-    "detach_mode",
-    is_flag=True,
-    help="Alias for --detect (kept for compatibility with the old spelling).",
-)
-@click.option(
-    "--cwd",
-    "detect_cwd",
-    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
-    help="Directory to inspect in detect mode (defaults to the current directory).",
 )
 @click.option(
     "--no-launch",
@@ -525,30 +507,18 @@ def run(ctx: click.Context, profile: str, codex_args: tuple[str, ...]) -> None:
 @click.pass_context
 def resume(
     ctx: click.Context,
-    session_id: str | None,
+    session_id: str,
     codex_args: tuple[str, ...],
     profile: str | None,
-    detect_mode: bool,
-    detach_mode: bool,
-    detect_cwd: Path | None,
     no_launch: bool,
 ) -> None:
-    """Resume a copied session, or detect the latest session for this directory."""
+    """Copy SESSION_ID for a profile, then resume the copy."""
     mgr = _mgr(ctx)
-    if detect_mode or detach_mode or (session_id or "").casefold() in {
-        "detect",
-        "detach",
-    }:
-        detected = mgr.detect_last_session(detect_cwd)
-        if detected is None:
-            location = detect_cwd or Path.cwd()
-            ui.warn(f"No previous Codex session found for {location}.")
-            return
-        ui.render_detected_session(detected)
-        return
-
-    if not session_id:
-        raise click.UsageError("Missing SESSION_ID (or use 'detect').", ctx)
+    if session_id.casefold() in {"detect", "detach", "--detect", "--detach"}:
+        raise click.UsageError(
+            "Use 'detect' or 'detect resume'; '--detach' is not supported.",
+            ctx,
+        )
 
     profiles = mgr.list_profiles()
     choices = [("default", f"default ({mgr.default_source_home()})")]
@@ -590,6 +560,44 @@ def resume(
 
     ui.info(f"Resuming copied session {result.session_id} ...")
     argv, env = mgr.resume_argv(target_home, result.session_id, list(codex_args))
+    os.execvpe(argv[0], argv, env)
+
+
+@cli.command(context_settings={"ignore_unknown_options": True})
+@click.argument(
+    "action",
+    required=False,
+    type=click.Choice(["resume"]),
+)
+@click.argument("codex_args", nargs=-1, type=click.UNPROCESSED)
+@click.option(
+    "--cwd",
+    "detect_cwd",
+    type=click.Path(path_type=Path, file_okay=False, dir_okay=True),
+    help="Directory to inspect (defaults to the current directory).",
+)
+@click.pass_context
+def detect(
+    ctx: click.Context,
+    action: str | None,
+    codex_args: tuple[str, ...],
+    detect_cwd: Path | None,
+) -> None:
+    """Detect the latest session, or RESUME it in its profile directly."""
+    mgr = _mgr(ctx)
+    detected = mgr.detect_last_session(detect_cwd)
+    if detected is None:
+        location = detect_cwd or Path.cwd()
+        ui.warn(f"No previous Codex session found for {location}.")
+        return
+
+    if action != "resume":
+        ui.render_detected_session(detected)
+        return
+
+    profile = detected.profile or "(detected home)"
+    ui.info(f"Resuming session {detected.session_id} in profile {profile} ...")
+    argv, env = mgr.resume_argv(detected.home, detected.session_id, list(codex_args))
     os.execvpe(argv[0], argv, env)
 
 

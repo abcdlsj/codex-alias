@@ -84,7 +84,7 @@ def test_run_help_before_profile_still_shows_manager_help() -> None:
     assert "Run codex once under PROFILE" in result.output
 
 
-def test_resume_detect_reports_profile_and_last_output(monkeypatch, tmp_path) -> None:
+def test_detect_reports_profile_and_last_output(monkeypatch, tmp_path) -> None:
     cwd = tmp_path / "repo"
     cwd.mkdir()
     profile = tmp_path / "profiles" / "work"
@@ -127,7 +127,7 @@ def test_resume_detect_reports_profile_and_last_output(monkeypatch, tmp_path) ->
     monkeypatch.chdir(cwd)
     result = CliRunner().invoke(
         cli,
-        ["resume", "detect"],
+        ["detect"],
         env=_env(tmp_path),
     )
 
@@ -137,12 +137,61 @@ def test_resume_detect_reports_profile_and_last_output(monkeypatch, tmp_path) ->
     assert "all done" in result.output
 
 
-def test_resume_detach_is_accepted_as_detect_alias(monkeypatch, tmp_path) -> None:
-    monkeypatch.chdir(tmp_path)
-    result = CliRunner().invoke(cli, ["resume", "detach"], env=_env(tmp_path))
+def test_detect_resume_uses_detected_profile_without_copying(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.delenv("SHELL", raising=False)
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+    profile = tmp_path / "profiles" / "work"
+    profile.mkdir(parents=True)
+    session_dir = profile / "sessions" / "2026" / "08" / "27"
+    session_dir.mkdir(parents=True)
+    session_path = session_dir / f"rollout-2026-08-27T10-00-00-{SID}.jsonl"
+    session_path.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-08-27T10:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": SID, "cwd": str(cwd)},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with sqlite3.connect(profile / "state_5.sqlite") as connection:
+        connection.execute(
+            "CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, updated_at_ms INTEGER)"
+        )
+        connection.execute(
+            "INSERT INTO threads VALUES (?, ?, ?, ?)",
+            (SID, str(session_path), str(cwd), 1_800_000_000_000),
+        )
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "codex_alias.cli.os.execvpe",
+        lambda file, argv, env: captured.update(file=file, argv=argv, env=env),
+    )
+    monkeypatch.chdir(cwd)
+    result = CliRunner().invoke(
+        cli,
+        ["detect", "resume", "--yolo"],
+        env=_env(tmp_path),
+    )
 
     assert result.exit_code == 0, result.output
-    assert "No previous Codex session found" in result.output
+    assert captured["argv"] == ["codex", "resume", SID, "--yolo"]
+    assert captured["env"]["CODEX_HOME"] == str(profile)
+    assert list(profile.glob("sessions/**/*.jsonl")) == [session_path]
+
+
+def test_resume_rejects_old_detect_spellings(tmp_path) -> None:
+    env = _env(tmp_path)
+    for args in (("resume", "detect"), ("resume", "detach"), ("resume", "--detach")):
+        result = CliRunner().invoke(cli, list(args), env=env)
+        assert result.exit_code == 2, result.output
+        assert "Use 'detect' or 'detect resume'" in result.output
 
 
 def _env(tmp_path) -> dict[str, str]:
