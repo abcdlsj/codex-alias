@@ -100,7 +100,7 @@ codexa share-sessions <profile> [source|@source]
 # Create it first with `codexa add <profile>` if needed.
 codexa run <profile> [codex args...]
 
-# Start/reuse, inspect, or stop an optional profile relay
+# Inspect or manually pin/unpin an optional profile relay
 codexa relay start <profile>
 codexa relay status [profile]
 codexa relay stop <profile>
@@ -223,25 +223,28 @@ Opt a profile in by creating `$CODEXALIAS_PROFILE_ROOT/<profile>/relay.toml`:
 ```toml
 upstream = "https://api.commandcode.ai/provider/v1"
 # Omit port to let codex-alias allocate a free local port.
-port = 4446
 api_key_file = "auth.json"
 api_key_field = "OPENAI_API_KEY"
 ```
 
-The key file is read only when the relay starts. The relay process receives it
+The key file is read only when the alias starts. The relay process receives it
 through its environment; the persisted relay state never contains the key.
 `command`, `provider`, `api_key_env`, and `extra_args` are also supported. For
 example, `command = "uvx --from codex-relay codex-relay"` selects a one-shot
 `uvx` installation.
 
 When a profile has `relay.toml`, `codexa run`, generated profile wrappers,
-`codexa resume`, and `codexa detect resume` automatically start or reuse its
-relay. Codex is launched with a local `wire_api = "responses"` provider, so do
-not point the profile directly at a Chat Completions URL. Profiles without
-`relay.toml` keep the normal launch path unchanged.
+`codexa resume`, and `codexa detect resume` automatically start its relay and
+stop it when the alias exits. Profiles without `relay.toml` keep the normal
+launch path unchanged. A relay is shared only when the effective upstream,
+API key, port/host, command, and extra arguments match; profiles with different
+upstreams or keys get separate processes. `codexa relay start` pins a relay for
+manual use, and `codexa relay stop` removes that pin (an active alias lease is
+never interrupted).
 
-Relay logs and process state live under the profile's `.codexalias-relay/`
-directory. Treat that directory and the profile's auth file as sensitive.
+Shared relay logs and process state live under
+`$CODEXALIAS_PROFILE_ROOT/.codexalias-relays/`; treat that directory and each
+profile's auth file as sensitive.
 
 ## Hook sharing
 

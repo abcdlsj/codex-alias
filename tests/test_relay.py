@@ -183,3 +183,170 @@ def test_prepare_reports_missing_key(tmp_path: Path) -> None:
 
     with pytest.raises(RelayConfigError, match="API key"):
         service.prepare(home)
+
+
+def test_session_shares_matching_relay_and_stops_after_last_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "profiles" / "first"
+    second = tmp_path / "profiles" / "second"
+    _write_relay(first, port=4446)
+    _write_relay(second, port=4446)
+    service = RelayService(_config(tmp_path))
+    spawned: list[dict[str, object]] = []
+    terminated: list[int] = []
+
+    def fake_spawn(**kwargs):
+        spawned.append(kwargs)
+        relay_config = kwargs["relay_config"]
+        return RelayState(
+            4321,
+            kwargs["port"],
+            relay_config.host,
+            kwargs["fingerprint"],
+            1.0,
+        )
+
+    monkeypatch.setattr(service, "_spawn_relay", fake_spawn)
+    monkeypatch.setattr(service, "_ready", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr("codex_alias.relay._pid_alive", lambda _pid: True)
+    monkeypatch.setattr(
+        "codex_alias.relay._terminate_pid", lambda pid: terminated.append(pid)
+    )
+
+    with service.session(first) as first_launch:
+        with service.session(second) as second_launch:
+            assert len(spawned) == 1
+            assert first_launch.codex_args == second_launch.codex_args
+            registry = spawned[0]["state_dir"]
+            leases = list((registry / "leases").glob("*.json"))
+            assert len(leases) == 2
+        assert terminated == []
+        assert (registry / "state.json").exists()
+
+    assert terminated == [4321]
+    assert not (registry / "state.json").exists()
+    assert not list((registry / "leases").glob("*.json"))
+
+
+def test_session_keeps_different_upstreams_or_keys_separate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "profiles" / "first"
+    second = tmp_path / "profiles" / "second"
+    _write_relay(first)
+    _write_relay(second)
+    (second / "auth.json").write_text(
+        json.dumps({"OPENAI_API_KEY": "different-key"}), encoding="utf-8"
+    )
+    (second / "relay.toml").write_text(
+        'upstream = "https://another.example/v1"\n', encoding="utf-8"
+    )
+    service = RelayService(_config(tmp_path))
+    spawned: list[dict[str, object]] = []
+    terminated: list[int] = []
+
+    def fake_spawn(**kwargs):
+        spawned.append(kwargs)
+        relay_config = kwargs["relay_config"]
+        return RelayState(
+            5000 + len(spawned),
+            kwargs["port"],
+            relay_config.host,
+            kwargs["fingerprint"],
+            1.0,
+        )
+
+    monkeypatch.setattr(service, "_spawn_relay", fake_spawn)
+    monkeypatch.setattr(service, "_ready", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr("codex_alias.relay._pid_alive", lambda _pid: True)
+    monkeypatch.setattr(
+        "codex_alias.relay._terminate_pid", lambda pid: terminated.append(pid)
+    )
+
+    with service.session(first), service.session(second):
+        assert len(spawned) == 2
+        assert spawned[0]["state_dir"] != spawned[1]["state_dir"]
+
+    assert sorted(terminated) == [5001, 5002]
+
+
+def test_manual_shared_pin_survives_alias_release_until_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "profiles" / "first"
+    second = tmp_path / "profiles" / "second"
+    _write_relay(first)
+    _write_relay(second)
+    service = RelayService(_config(tmp_path))
+    spawned: list[dict[str, object]] = []
+    terminated: list[int] = []
+
+    def fake_spawn(**kwargs):
+        spawned.append(kwargs)
+        relay_config = kwargs["relay_config"]
+        return RelayState(
+            6000,
+            kwargs["port"],
+            relay_config.host,
+            kwargs["fingerprint"],
+            1.0,
+        )
+
+    monkeypatch.setattr(service, "_spawn_relay", fake_spawn)
+    monkeypatch.setattr(service, "_ready", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr("codex_alias.relay._pid_alive", lambda _pid: True)
+    monkeypatch.setattr(
+        "codex_alias.relay._terminate_pid", lambda pid: terminated.append(pid)
+    )
+
+    assert service.start(first).running
+    assert service.start(second).running
+    with service.session(first):
+        pass
+    assert terminated == []
+    assert service.stop(first).running
+    assert terminated == []
+    assert service.stop(second).state == "stopped"
+    assert terminated == [6000]
+    assert len(spawned) == 1
+
+
+def test_stop_uses_pointer_when_profile_config_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "profiles" / "first"
+    second = tmp_path / "profiles" / "second"
+    _write_relay(first)
+    _write_relay(second)
+    service = RelayService(_config(tmp_path))
+    terminated: list[int] = []
+
+    def fake_spawn(**kwargs):
+        relay_config = kwargs["relay_config"]
+        return RelayState(
+            7000,
+            kwargs["port"],
+            relay_config.host,
+            kwargs["fingerprint"],
+            1.0,
+        )
+
+    monkeypatch.setattr(service, "_spawn_relay", fake_spawn)
+    monkeypatch.setattr(service, "_ready", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr("codex_alias.relay._pid_alive", lambda _pid: True)
+    monkeypatch.setattr(
+        "codex_alias.relay._terminate_pid", lambda pid: terminated.append(pid)
+    )
+
+    assert service.start(first).running
+    assert service.start(second).running
+    (first / "auth.json").write_text(
+        json.dumps({"OPENAI_API_KEY": "changed-key"}), encoding="utf-8"
+    )
+
+    result = service.stop(first)
+
+    assert result.running
+    assert terminated == []
+    assert service.status(second).running

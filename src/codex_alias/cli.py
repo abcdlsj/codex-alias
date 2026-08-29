@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -34,6 +35,23 @@ def _confirm_lossy_mapping(exc: SessionLossyMappingError, subject: str) -> None:
     )
     if not ui.confirm("Apply this lossy mapping?", default=False):
         raise click.ClickException("lossy session mapping declined")
+
+
+def _execute_codex(
+    argv: list[str],
+    env: dict[str, str],
+    *,
+    managed_relay: bool,
+) -> int:
+    """Run Codex, retaining a parent process when a relay needs cleanup."""
+    if not managed_relay:
+        # Preserve the historical exec path for profiles without a relay.
+        os.execvpe(argv[0], argv, env)
+        return 0  # pragma: no cover - only reachable in tests' exec stubs.
+    try:
+        return subprocess.call(argv, env=env)
+    except KeyboardInterrupt:
+        return 130
 
 
 def _interactive_migrate(mgr: CodexAlias, target_home: Path) -> None:
@@ -570,8 +588,21 @@ def add(ctx: click.Context, profile: str, command_name: str | None, no_bootstrap
 def run(ctx: click.Context, profile: str, codex_args: tuple[str, ...]) -> None:
     """Run codex once under an existing PROFILE without creating a wrapper."""
     mgr = _mgr(ctx)
-    argv, env = mgr.run_with_relay_argv(profile, list(codex_args))
-    os.execvpe(argv[0], argv, env)
+    home = mgr.profile_home(profile, must_exist=True)
+    with mgr.relay_service.session(home) as launch:
+        argv, env = mgr.launcher.run_argv(
+            profile,
+            list(codex_args),
+            prefix_args=launch.codex_args,
+        )
+        env.update(launch.environment)
+        returncode = _execute_codex(
+            argv,
+            env,
+            managed_relay=launch.status is not None,
+        )
+    if launch.status is not None:
+        raise click.exceptions.Exit(returncode)
 
 
 @cli.command(context_settings={"ignore_unknown_options": True})
@@ -641,10 +672,21 @@ def resume(
         return
 
     ui.info(f"Resuming copied session {result.session_id} ...")
-    argv, env = mgr.resume_with_relay_argv(
-        target_home, result.session_id, list(codex_args)
-    )
-    os.execvpe(argv[0], argv, env)
+    with mgr.relay_service.session(target_home) as launch:
+        argv, env = mgr.launcher.resume_argv(
+            target_home,
+            result.session_id,
+            list(codex_args),
+            prefix_args=launch.codex_args,
+        )
+        env.update(launch.environment)
+        returncode = _execute_codex(
+            argv,
+            env,
+            managed_relay=launch.status is not None,
+        )
+    if launch.status is not None:
+        raise click.exceptions.Exit(returncode)
 
 
 @cli.command(context_settings={"ignore_unknown_options": True})
@@ -681,10 +723,21 @@ def detect(
 
     profile = detected.profile or "(detected home)"
     ui.info(f"Resuming session {detected.session_id} in profile {profile} ...")
-    argv, env = mgr.resume_with_relay_argv(
-        detected.home, detected.session_id, list(codex_args)
-    )
-    os.execvpe(argv[0], argv, env)
+    with mgr.relay_service.session(detected.home) as launch:
+        argv, env = mgr.launcher.resume_argv(
+            detected.home,
+            detected.session_id,
+            list(codex_args),
+            prefix_args=launch.codex_args,
+        )
+        env.update(launch.environment)
+        returncode = _execute_codex(
+            argv,
+            env,
+            managed_relay=launch.status is not None,
+        )
+    if launch.status is not None:
+        raise click.exceptions.Exit(returncode)
 
 
 @cli.command(name="list")

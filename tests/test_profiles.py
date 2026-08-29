@@ -101,6 +101,15 @@ def test_list_profiles_reports_sharing(mgr: CodexAlias) -> None:
     assert all(not p.sessions_shared for p in profiles)
 
 
+def test_list_profiles_ignores_internal_relay_registry(mgr: CodexAlias) -> None:
+    mgr.add_profile("work")
+    (mgr.config.profile_root / ".codexalias-relays").mkdir()
+
+    profiles = mgr.list_profiles()
+
+    assert [p.name for p in profiles] == ["work"]
+
+
 def test_remove_wrapper(mgr: CodexAlias) -> None:
     mgr.add_profile("work")
     target, removed = mgr.remove_wrapper("work")

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 
 from click.testing import CliRunner
 
-from codex_alias import ProfileNotFoundError
+from codex_alias import ProfileNotFoundError, RelayLaunch, RelayStatus
 from codex_alias.cli import cli
 from conftest import write_session
 
@@ -41,6 +42,44 @@ def test_run_forwards_unknown_codex_options(monkeypatch, tmp_path) -> None:
         "--model",
         "gpt-5",
     ]
+
+
+def test_run_releases_relay_after_codex_exits(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("SHELL", raising=False)
+    profile = tmp_path / "profiles" / "relay"
+    profile.mkdir(parents=True)
+    (profile / "relay.toml").write_text(
+        'upstream = "https://provider.example/v1"\n', encoding="utf-8"
+    )
+    (profile / "auth.json").write_text(
+        json.dumps({"OPENAI_API_KEY": "test-key"}), encoding="utf-8"
+    )
+    calls: dict[str, object] = {}
+
+    @contextmanager
+    def fake_session(_service, home):
+        calls["home"] = home
+        try:
+            yield RelayLaunch(
+                ("-c", 'model_provider="relay"'),
+                {"OPENAI_API_KEY": "test-key"},
+                RelayStatus(home, "running", "127.0.0.1", 4446, 4321),
+            )
+        finally:
+            calls["released"] = True
+
+    monkeypatch.setattr("codex_alias.relay.RelayService.session", fake_session)
+    monkeypatch.setattr(
+        "codex_alias.cli.subprocess.call",
+        lambda argv, env: calls.update(argv=argv, env=env) or 7,
+    )
+
+    result = CliRunner().invoke(cli, ["run", "relay", "exec", "hello"])
+
+    assert result.exit_code == 7, result.output
+    assert calls["home"] == profile
+    assert calls["released"] is True
+    assert calls["argv"] == ["codex", "-c", 'model_provider="relay"', "exec", "hello"]
 
 
 def test_profile_shortcut_forwards_codex_options(monkeypatch, tmp_path) -> None:

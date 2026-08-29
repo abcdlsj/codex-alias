@@ -4,8 +4,9 @@ Codex CLI speaks the Responses API, while a number of compatible providers
 only expose Chat Completions.  A profile can opt into a local
 ``codex-relay`` process by adding ``relay.toml`` to its Codex home.  The
 manager starts (or reuses) that process and injects a small set of Codex
-configuration overrides at launch time.  Profiles without that file are
-unchanged.
+configuration overrides at launch time.  Alias launches hold a short-lived
+lease, so the process is reclaimed after the last matching alias exits.
+Profiles without that file are unchanged.
 
 The relay itself is deliberately an external executable.  Keeping it outside
 this package means users can update it independently and codex-alias remains
@@ -23,8 +24,7 @@ import signal
 import socket
 import subprocess
 import time
-import urllib.error
-import urllib.request
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +46,9 @@ except ImportError:  # pragma: no cover - keeps imports portable.
 
 RELAY_CONFIG_NAME = "relay.toml"
 RELAY_STATE_DIR_NAME = ".codexalias-relay"
+RELAY_REGISTRY_DIR_NAME = ".codexalias-relays"
+RELAY_LEASES_DIR_NAME = "leases"
+RELAY_MANUAL_NAME = "manual"
 RELAY_PROVIDER = "codexalias_relay"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_API_KEY_ENV = "OPENAI_API_KEY"
@@ -207,6 +210,15 @@ class RelayStatus:
 
 
 @dataclass(frozen=True, slots=True)
+class RelayLease:
+    """A process-scoped claim on a shared relay instance."""
+
+    registry: Path
+    token: str
+    state: RelayState
+
+
+@dataclass(frozen=True, slots=True)
 class RelayLaunch:
     """Launch additions returned to the Codex process builder."""
 
@@ -232,6 +244,68 @@ class RelayService:
 
         key = self._api_key(home, relay_config)
         state = self._ensure_started(home, relay_config, key)
+        return self._launch(home, relay_config, key, state)
+
+    @contextmanager
+    def session(self, home: Path) -> Iterator[RelayLaunch]:
+        """Yield a launch while holding a shared relay lease.
+
+        The relay process is shared by profiles whose effective relay
+        configuration is identical.  It is stopped when the last alias
+        releases its lease.  Profiles without an enabled ``relay.toml`` are
+        yielded a no-op launch and never create a registry entry.
+        """
+        relay_config = self.config_for(home)
+        if relay_config is None or not relay_config.enabled:
+            yield RelayLaunch((), {}, None)
+            return
+
+        key = self._api_key(home, relay_config)
+        state, lease = self._acquire_shared(home, relay_config, key)
+        try:
+            yield self._launch(home, relay_config, key, state)
+        finally:
+            self.release(lease)
+
+    def acquire(self, home: Path) -> tuple[RelayLaunch, RelayLease] | None:
+        """Acquire a shared relay lease without entering a context manager.
+
+        This is useful for callers that need to control process execution
+        themselves.  Call :meth:`release` exactly once for the returned lease.
+        ``None`` means the profile has no enabled relay configuration.
+        """
+        relay_config = self.config_for(home)
+        if relay_config is None or not relay_config.enabled:
+            return None
+        key = self._api_key(home, relay_config)
+        state, lease = self._acquire_shared(home, relay_config, key)
+        return self._launch(home, relay_config, key, state), lease
+
+    def release(self, lease: RelayLease) -> None:
+        """Release a shared relay lease and stop an idle relay."""
+        lease_dir = lease.registry / RELAY_LEASES_DIR_NAME
+        with _file_lock(lease.registry / "lock"):
+            (lease_dir / f"{lease.token}.json").unlink(missing_ok=True)
+            self._cleanup_leases(lease_dir)
+            state = self._read_registry_state(lease.registry)
+            if (
+                state is None
+                or self._has_manual_pins(lease.registry)
+                or self._has_leases(lease_dir)
+            ):
+                return
+            if _pid_alive(state.pid):
+                _terminate_pid(state.pid)
+            self._registry_state_path(lease.registry).unlink(missing_ok=True)
+
+    def _launch(
+        self,
+        home: Path,
+        relay_config: RelayConfig,
+        key: str,
+        state: RelayState,
+    ) -> RelayLaunch:
+        """Build Codex overrides for a running relay."""
         base_url = _base_url(state.host, state.port)
         provider = (
             relay_config.provider
@@ -291,16 +365,61 @@ class RelayService:
         return active
 
     def start(self, home: Path) -> RelayStatus:
-        """Start/reuse the relay configured for ``home``."""
+        """Start/reuse a shared relay and keep it pinned until ``stop``."""
         relay_config = self.config_for(home)
         if relay_config is None or not relay_config.enabled:
             return RelayStatus(home=home, state="disabled", message="relay.toml is not enabled")
         key = self._api_key(home, relay_config)
-        state = self._ensure_started(home, relay_config, key)
+        state, lease = self._acquire_shared(home, relay_config, key)
+        try:
+            with _file_lock(lease.registry / "lock"):
+                (self._leases_dir(lease.registry) / f"{lease.token}.json").unlink(
+                    missing_ok=True
+                )
+                self._add_manual_pin(lease.registry, home)
+                # Keep a small compatibility pointer for older tooling that
+                # reads ``<profile>/.codexalias-relay/state.json``.  It is
+                # marked as shared so a later alias does not retire it.
+                self._write_state_pointer(home, state, lease.registry)
+        except BaseException:
+            self.release(lease)
+            raise
         return RelayStatus(home, "running", state.host, state.port, state.pid)
 
     def stop(self, home: Path) -> RelayStatus:
-        """Stop the process recorded for ``home`` (if any)."""
+        """Release a manually pinned relay, stopping it when idle."""
+        # A manual start leaves a pointer in the profile home. Resolve that
+        # pointer before reading the current config so changing/removing the
+        # upstream or API key cannot make us fall back to killing a shared
+        # process by PID.
+        pointer = self._state_pointer(home)
+        if pointer is not None:
+            registry, pointer_state = pointer
+            if registry.exists():
+                result = self._stop_registry(home, registry, pointer_state)
+                self._state_path(home).unlink(missing_ok=True)
+                return result
+            # The registry was removed already; the pointer is stale and its
+            # PID is no longer safe to signal because ownership is unknown.
+            self._state_path(home).unlink(missing_ok=True)
+            return RelayStatus(
+                home=home,
+                state="stopped",
+                host=pointer_state.host,
+                port=pointer_state.port,
+                pid=pointer_state.pid,
+                message="relay registry is missing",
+            )
+
+        shared = self._shared_record(home)
+        if shared is not None:
+            relay_config, registry, state = shared
+            del relay_config
+            result = self._stop_registry(home, registry, state)
+            if result is not None:
+                self._state_path(home).unlink(missing_ok=True)
+                return result
+
         state_dir = self._state_dir(home)
         if not state_dir.is_dir():
             return RelayStatus(home=home, state="stopped", message="no relay process recorded")
@@ -328,6 +447,30 @@ class RelayService:
         relay_config = self.config_for(home)
         if relay_config is None or not relay_config.enabled:
             return RelayStatus(home=home, state="disabled", message="relay.toml is not enabled")
+
+        shared = self._shared_record(home)
+        if shared is not None:
+            _relay_config, registry, state = shared
+            if not _pid_alive(state.pid):
+                return RelayStatus(
+                    home=home,
+                    state="stale",
+                    host=state.host,
+                    port=state.port,
+                    pid=state.pid,
+                )
+            if not self._ready(state.host, state.port, timeout=0.4):
+                return RelayStatus(
+                    home=home,
+                    state="stale",
+                    host=state.host,
+                    port=state.port,
+                    pid=state.pid,
+                    message="process is alive but its listener is not ready",
+                )
+            del registry
+            return RelayStatus(home, "running", state.host, state.port, state.pid)
+
         state = self._read_state(home)
         if state is None:
             return RelayStatus(home=home, state="stopped", message="relay has not been started")
@@ -353,6 +496,56 @@ class RelayService:
     def statuses(self, homes: list[Path]) -> list[RelayStatus]:
         return [self.status(home) for home in homes]
 
+    def _shared_record(
+        self, home: Path
+    ) -> tuple[RelayConfig, Path, RelayState] | None:
+        """Resolve the shared registry entry for a configured profile."""
+        relay_config = self.config_for(home)
+        if relay_config is None or not relay_config.enabled:
+            return None
+        try:
+            key = self._api_key(home, relay_config)
+        except RelayConfigError:
+            return None
+        fingerprint = _fingerprint(relay_config, key, self.config.relay_command)
+        registry = self._registry_dir(fingerprint)
+        state = self._read_registry_state(registry)
+        if state is None:
+            return None
+        return relay_config, registry, state
+
+    def _stop_registry(
+        self,
+        home: Path,
+        registry: Path,
+        state: RelayState,
+    ) -> RelayStatus | None:
+        """Remove a manual pin and stop a shared relay when no leases remain."""
+        with _file_lock(registry / "lock"):
+            self._remove_manual_pin(registry, home)
+            lease_dir = self._leases_dir(registry)
+            self._cleanup_leases(lease_dir)
+            current = self._read_registry_state(registry) or state
+            if self._has_manual_pins(registry) or self._has_leases(lease_dir):
+                return RelayStatus(
+                    home=home,
+                    state="running",
+                    host=current.host,
+                    port=current.port,
+                    pid=current.pid,
+                    message="relay is still used by an active alias",
+                )
+            if _pid_alive(current.pid):
+                _terminate_pid(current.pid)
+            self._registry_state_path(registry).unlink(missing_ok=True)
+            return RelayStatus(
+                home=home,
+                state="stopped",
+                host=current.host,
+                port=current.port,
+                pid=current.pid,
+            )
+
     def _ensure_started(self, home: Path, relay_config: RelayConfig, key: str) -> RelayState:
         state_dir = self._state_dir(home)
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -372,60 +565,131 @@ class RelayService:
                 self._state_path(home).unlink(missing_ok=True)
 
             port = relay_config.port or _find_free_port(relay_config.host)
-            command = relay_config.command or self.config.relay_command
-            parts = shlex.split(command)
-            if not parts:
-                raise RelayConfigError(f"relay command is empty in {relay_config.path}")
-            executable = shutil.which(parts[0]) or (
-                parts[0] if Path(parts[0]).is_file() else None
+            state = self._spawn_relay(
+                home=home,
+                state_dir=state_dir,
+                relay_config=relay_config,
+                key=key,
+                port=port,
+                fingerprint=fingerprint,
             )
-            if executable is None:
-                raise RelayUnavailableError(
-                    f"relay executable not found: {parts[0]} "
-                    "(install with `uv tool install codex-relay`)"
-                )
-
-            log_path = state_dir / "relay.log"
-            try:
-                log_handle = log_path.open("ab")
-                process_env = dict(os.environ)
-                process_env.update(
-                    {
-                        "CODEX_RELAY_UPSTREAM": relay_config.upstream,
-                        "CODEX_RELAY_API_KEY": key,
-                        "CODEX_RELAY_PORT": str(port),
-                        "CODEX_RELAY_BIND": relay_config.host,
-                    }
-                )
-                process = subprocess.Popen(
-                    [executable, *parts[1:], *relay_config.extra_args],
-                    cwd=str(home),
-                    env=process_env,
-                    stdin=subprocess.DEVNULL,
-                    stdout=log_handle,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                )
-            except OSError as exc:
-                raise RelayUnavailableError(
-                    f"could not start relay for {relay_config.path}: {exc}"
-                ) from exc
-            finally:
-                try:
-                    log_handle.close()
-                except UnboundLocalError:
-                    pass
-
-            state = RelayState(process.pid, port, relay_config.host, fingerprint, time.time())
-            if not self._ready(state.host, state.port):
-                if _pid_alive(process.pid):
-                    _terminate_pid(process.pid)
-                raise RelayUnavailableError(
-                    f"relay did not become ready at {_base_url(state.host, state.port)}; "
-                    f"see {log_path}"
-                )
             self._write_state(home, state)
             return state
+
+    def _acquire_shared(
+        self,
+        home: Path,
+        relay_config: RelayConfig,
+        key: str,
+    ) -> tuple[RelayState, RelayLease]:
+        """Start/reuse the registry relay and add one process lease."""
+        fingerprint = _fingerprint(relay_config, key, self.config.relay_command)
+        registry = self._registry_dir(fingerprint)
+        registry.mkdir(parents=True, exist_ok=True)
+        lease_dir = self._leases_dir(registry)
+        lease_dir.mkdir(parents=True, exist_ok=True)
+        # Versions before shared leases stored one daemon under each profile.
+        # Retire that state when the profile first opts into the new lifecycle.
+        self._retire_legacy_state(home)
+
+        with _file_lock(registry / "lock"):
+            self._cleanup_leases(lease_dir)
+            current = self._read_registry_state(registry)
+            if not (
+                current is not None
+                and current.fingerprint == fingerprint
+                and _pid_alive(current.pid)
+                and self._ready(current.host, current.port)
+            ):
+                if current is not None and _pid_alive(current.pid):
+                    _terminate_pid(current.pid)
+                    self._registry_state_path(registry).unlink(missing_ok=True)
+                port = relay_config.port or _find_free_port(relay_config.host)
+                current = self._spawn_relay(
+                    home=registry,
+                    state_dir=registry,
+                    relay_config=relay_config,
+                    key=key,
+                    port=port,
+                    fingerprint=fingerprint,
+                )
+                self._write_registry_state(registry, current)
+
+            token = uuid.uuid4().hex
+            (lease_dir / f"{token}.json").write_text(
+                json.dumps(
+                    {"pid": os.getpid(), "created_at": time.time()}
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            return current, RelayLease(registry, token, current)
+
+    def _spawn_relay(
+        self,
+        *,
+        home: Path,
+        state_dir: Path,
+        relay_config: RelayConfig,
+        key: str,
+        port: int,
+        fingerprint: str,
+    ) -> RelayState:
+        """Spawn one relay process and wait for its local listener."""
+        command = relay_config.command or self.config.relay_command
+        parts = shlex.split(command)
+        if not parts:
+            raise RelayConfigError(f"relay command is empty in {relay_config.path}")
+        executable = shutil.which(parts[0]) or (
+            parts[0] if Path(parts[0]).is_file() else None
+        )
+        if executable is None:
+            raise RelayUnavailableError(
+                f"relay executable not found: {parts[0]} "
+                "(install with `uv tool install codex-relay`)"
+            )
+
+        state_dir.mkdir(parents=True, exist_ok=True)
+        log_path = state_dir / "relay.log"
+        try:
+            log_handle = log_path.open("ab")
+            process_env = dict(os.environ)
+            process_env.update(
+                {
+                    "CODEX_RELAY_UPSTREAM": relay_config.upstream,
+                    "CODEX_RELAY_API_KEY": key,
+                    "CODEX_RELAY_PORT": str(port),
+                    "CODEX_RELAY_BIND": relay_config.host,
+                }
+            )
+            process = subprocess.Popen(
+                [executable, *parts[1:], *relay_config.extra_args],
+                cwd=str(home),
+                env=process_env,
+                stdin=subprocess.DEVNULL,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            raise RelayUnavailableError(
+                f"could not start relay for {relay_config.path}: {exc}"
+            ) from exc
+        finally:
+            try:
+                log_handle.close()
+            except UnboundLocalError:
+                pass
+
+        state = RelayState(process.pid, port, relay_config.host, fingerprint, time.time())
+        if not self._ready(state.host, state.port):
+            if _pid_alive(process.pid):
+                _terminate_pid(process.pid)
+            raise RelayUnavailableError(
+                f"relay did not become ready at {_base_url(state.host, state.port)}; "
+                f"see {log_path}"
+            )
+        return state
 
     def _api_key(self, home: Path, relay_config: RelayConfig) -> str:
         if relay_config.api_key_file is not None:
@@ -460,6 +724,35 @@ class RelayService:
     def _state_path(self, home: Path) -> Path:
         return self._state_dir(home) / "state.json"
 
+    def _retire_legacy_state(self, home: Path) -> None:
+        path = self._state_path(home)
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return
+        if isinstance(raw, dict) and raw.get("registry"):
+            return
+        state = RelayState.from_json(raw)
+        if state is None:
+            return
+        if _pid_alive(state.pid):
+            _terminate_pid(state.pid)
+        path.unlink(missing_ok=True)
+
+    def _registry_root(self) -> Path:
+        return self.config.profile_root / RELAY_REGISTRY_DIR_NAME
+
+    def _registry_dir(self, fingerprint: str) -> Path:
+        return self._registry_root() / fingerprint
+
+    @staticmethod
+    def _leases_dir(registry: Path) -> Path:
+        return registry / RELAY_LEASES_DIR_NAME
+
+    @staticmethod
+    def _registry_state_path(registry: Path) -> Path:
+        return registry / "state.json"
+
     def _read_state(self, home: Path) -> RelayState | None:
         path = self._state_path(home)
         try:
@@ -468,23 +761,130 @@ class RelayService:
             return None
         return RelayState.from_json(raw)
 
+    def _state_pointer(self, home: Path) -> tuple[Path, RelayState] | None:
+        """Read a profile's pointer to a shared relay registry."""
+        path = self._state_path(home)
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(raw, dict):
+            return None
+        registry_raw = raw.get("registry")
+        if not isinstance(registry_raw, str) or not registry_raw:
+            return None
+        state = RelayState.from_json(raw)
+        if state is None:
+            return None
+        return Path(registry_raw), state
+
     def _write_state(self, home: Path, state: RelayState) -> None:
         self._state_path(home).write_text(
             json.dumps(state.as_json(), sort_keys=True) + "\n",
             encoding="utf-8",
         )
 
+    def _write_state_pointer(
+        self, home: Path, state: RelayState, registry: Path
+    ) -> None:
+        state_dir = self._state_dir(home)
+        state_dir.mkdir(parents=True, exist_ok=True)
+        payload = {**state.as_json(), "registry": str(registry)}
+        self._state_path(home).write_text(
+            json.dumps(payload, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    def _read_registry_state(self, registry: Path) -> RelayState | None:
+        path = self._registry_state_path(registry)
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return None
+        return RelayState.from_json(raw)
+
+    def _write_registry_state(self, registry: Path, state: RelayState) -> None:
+        self._registry_state_path(registry).write_text(
+            json.dumps(state.as_json(), sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _cleanup_leases(lease_dir: Path) -> None:
+        for path in lease_dir.glob("*.json"):
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                pid = int(raw["pid"])
+            except (FileNotFoundError, OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+                path.unlink(missing_ok=True)
+                continue
+            if not _pid_alive(pid):
+                path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _has_leases(lease_dir: Path) -> bool:
+        return any(lease_dir.glob("*.json"))
+
+    @staticmethod
+    def _manual_pins(registry: Path) -> set[str]:
+        path = registry / RELAY_MANUAL_NAME
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return set()
+        if not isinstance(raw, dict):
+            return set()
+        profiles = raw.get("profiles")
+        if not isinstance(profiles, list):
+            return set()
+        return {item for item in profiles if isinstance(item, str) and item}
+
+    @classmethod
+    def _write_manual_pins(cls, registry: Path, profiles: set[str]) -> None:
+        path = registry / RELAY_MANUAL_NAME
+        if not profiles:
+            path.unlink(missing_ok=True)
+            return
+        path.write_text(
+            json.dumps({"profiles": sorted(profiles)}) + "\n",
+            encoding="utf-8",
+        )
+
+    @classmethod
+    def _add_manual_pin(cls, registry: Path, home: Path) -> None:
+        profiles = cls._manual_pins(registry)
+        profiles.add(str(home))
+        cls._write_manual_pins(registry, profiles)
+
+    @classmethod
+    def _remove_manual_pin(cls, registry: Path, home: Path) -> None:
+        profiles = cls._manual_pins(registry)
+        profiles.discard(str(home))
+        cls._write_manual_pins(registry, profiles)
+
+    @classmethod
+    def _has_manual_pins(cls, registry: Path) -> bool:
+        return bool(cls._manual_pins(registry))
+
     @staticmethod
     def _ready(host: str, port: int, *, timeout: float = DEFAULT_READY_TIMEOUT) -> bool:
-        url = f"{_base_url(host, port)}/models"
-        try:
-            with urllib.request.urlopen(url, timeout=timeout) as response:
-                return 200 <= response.status < 300
-        except urllib.error.HTTPError as exc:
-            # A running relay may be configured to protect its local listener.
-            return exc.code in {401, 403}
-        except (OSError, urllib.error.URLError):
-            return False
+        # ``/v1/models`` is backed by the upstream and may legitimately take
+        # several seconds (or fail while the provider is unavailable).  Alias
+        # lifecycle only needs to know that the local relay has bound its
+        # listener; Codex will receive the upstream error on the actual turn.
+        connect_host = host.strip("[]")
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            try:
+                with socket.create_connection(
+                    (connect_host, port), timeout=min(0.25, remaining)
+                ):
+                    return True
+            except OSError:
+                time.sleep(min(0.05, max(0.0, remaining)))
 
 
 def _bool_value(value: object, name: str, path: Path) -> bool:

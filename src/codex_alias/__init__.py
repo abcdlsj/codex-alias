@@ -51,7 +51,14 @@ from .models import (
     SessionFile,
     SessionFixResult,
 )
-from .relay import RelayConfig, RelayLaunch, RelayService, RelayState, RelayStatus
+from .relay import (
+    RelayConfig,
+    RelayLaunch,
+    RelayLease,
+    RelayService,
+    RelayState,
+    RelayStatus,
+)
 
 __version__ = "0.3.5"
 
@@ -81,6 +88,7 @@ __all__ = [
     # relay
     "RelayConfig",
     "RelayLaunch",
+    "RelayLease",
     "RelayService",
     "RelayState",
     "RelayStatus",

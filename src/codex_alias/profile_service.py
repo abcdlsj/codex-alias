@@ -15,6 +15,7 @@ from .config import Config
 from .errors import CodexAliasError, ProfileConflictError, ProfileNotFoundError
 from .launcher import ProfileLauncher
 from .models import Profile, ProfileRemoveResult, ProfileRenameResult
+from .relay import RELAY_REGISTRY_DIR_NAME
 from .validation import validate_name
 
 
@@ -36,7 +37,11 @@ class ProfileStore:
                 path=path,
                 sessions_shared=(path / "sessions").is_symlink(),
             )
-            for path in sorted(path for path in root.iterdir() if path.is_dir())
+            for path in sorted(
+                path
+                for path in root.iterdir()
+                if path.is_dir() and path.name != RELAY_REGISTRY_DIR_NAME
+            )
         ]
 
     def profile_home(self, profile: str, *, must_exist: bool = False) -> Path:
