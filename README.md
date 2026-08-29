@@ -5,6 +5,10 @@ profile gets an isolated `CODEX_HOME` and a wrapper command (for example
 `codex-work`) that forwards to the original `codex` binary, so auth, config, and
 history stay separated.
 
+Profiles can optionally run a local [`codex-relay`](https://github.com/MetaFARS/codex-relay)
+bridge. This keeps Codex on its Responses API while translating requests for
+providers that only expose Chat Completions.
+
 It ships as a Python package with two parts:
 
 - a reusable, UI-free library (`codex_alias`) that does all the filesystem work
@@ -96,6 +100,14 @@ codexa share-sessions <profile> [source|@source]
 # Create it first with `codexa add <profile>` if needed.
 codexa run <profile> [codex args...]
 
+# Start/reuse, inspect, or stop an optional profile relay
+codexa relay start <profile>
+codexa relay status [profile]
+codexa relay stop <profile>
+codexa relay start --all
+codexa relay status --all
+codexa relay stop --all
+
 # Shortcut: run an existing profile and forward all remaining args to Codex
 codexa <profile> [codex args...]
 
@@ -182,6 +194,7 @@ them is only necessary when the generated wrapper format itself changes.
 - `CODEXALIAS_CODEX_WRAPPER`: executable Codex wrapper; takes precedence over
   `CODEXALIAS_CODEX_CMD` for `run`, `resume`, and generated profile commands
 - `CODEXALIAS_CODEX_ARGS`: fixed arguments prepended to every Codex invocation
+- `CODEXALIAS_RELAY_COMMAND`: relay executable (default `codex-relay`)
 - `CODEXALIAS_SOURCE_HOME`: source home used by `add`/`@source` (default: `$CODEX_HOME` or `~/.codex`)
 - `CODEXALIAS_MANAGER_BIN_NAME`: manager binary name used by generated profile commands (default: `codexalias`, a compatibility alias)
 
@@ -195,6 +208,40 @@ codexa resume <session-id>
 
 The explicit override must be an executable name or path. Without it, shell
 aliases and functions are inherited automatically.
+
+## Chat-only providers with codex-relay
+
+Install the bridge separately (it is intentionally not a dependency of
+`codex-alias`):
+
+```bash
+uv tool install codex-relay
+```
+
+Opt a profile in by creating `$CODEXALIAS_PROFILE_ROOT/<profile>/relay.toml`:
+
+```toml
+upstream = "https://api.commandcode.ai/provider/v1"
+# Omit port to let codex-alias allocate a free local port.
+port = 4446
+api_key_file = "auth.json"
+api_key_field = "OPENAI_API_KEY"
+```
+
+The key file is read only when the relay starts. The relay process receives it
+through its environment; the persisted relay state never contains the key.
+`command`, `provider`, `api_key_env`, and `extra_args` are also supported. For
+example, `command = "uvx --from codex-relay codex-relay"` selects a one-shot
+`uvx` installation.
+
+When a profile has `relay.toml`, `codexa run`, generated profile wrappers,
+`codexa resume`, and `codexa detect resume` automatically start or reuse its
+relay. Codex is launched with a local `wire_api = "responses"` provider, so do
+not point the profile directly at a Chat Completions URL. Profiles without
+`relay.toml` keep the normal launch path unchanged.
+
+Relay logs and process state live under the profile's `.codexalias-relay/`
+directory. Treat that directory and the profile's auth file as sensitive.
 
 ## Hook sharing
 

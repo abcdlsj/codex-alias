@@ -71,3 +71,11 @@ class SessionLossyMappingError(SessionRepairError):
 
 class HookConfigError(CodexAliasError):
     """A Codex hook configuration cannot be read or updated safely."""
+
+
+class RelayConfigError(CodexAliasError):
+    """A profile's optional codex-relay configuration is invalid."""
+
+
+class RelayUnavailableError(CodexAliasError):
+    """A configured codex-relay process could not be started or reached."""

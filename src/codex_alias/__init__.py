@@ -26,6 +26,8 @@ from .errors import (
     InvalidNameError,
     ProfileConflictError,
     ProfileNotFoundError,
+    RelayConfigError,
+    RelayUnavailableError,
     SessionConflictError,
     SessionLossyMappingError,
     SessionNotFoundError,
@@ -49,6 +51,7 @@ from .models import (
     SessionFile,
     SessionFixResult,
 )
+from .relay import RelayConfig, RelayLaunch, RelayService, RelayState, RelayStatus
 
 __version__ = "0.3.5"
 
@@ -75,11 +78,19 @@ __all__ = [
     "SessionCloneResult",
     "SessionFile",
     "SessionFixResult",
+    # relay
+    "RelayConfig",
+    "RelayLaunch",
+    "RelayService",
+    "RelayState",
+    "RelayStatus",
     # errors
     "CodexAliasError",
     "InvalidNameError",
     "ProfileConflictError",
     "ProfileNotFoundError",
+    "RelayConfigError",
+    "RelayUnavailableError",
     "HomeNotFoundError",
     "HookConfigError",
     "SessionNotFoundError",

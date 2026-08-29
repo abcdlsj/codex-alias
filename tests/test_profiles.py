@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from codex_alias import (
@@ -10,6 +12,7 @@ from codex_alias import (
     ProfileConflictError,
     ProfileNotFoundError,
 )
+from codex_alias.relay import RelayLaunch, RelayStatus
 from codex_alias.models import HomeKind
 
 
@@ -122,6 +125,22 @@ def test_remove_profile_deletes_wrapper_and_home(mgr: CodexAlias) -> None:
     assert [p.name for p in mgr.list_profiles()] == ["play"]
 
 
+def test_remove_profile_stops_relay_before_deleting_home(
+    mgr: CodexAlias, monkeypatch
+) -> None:
+    mgr.add_profile("work")
+    stopped: list[Path] = []
+    monkeypatch.setattr(
+        mgr.relay_service,
+        "stop",
+        lambda home: stopped.append(home),
+    )
+
+    mgr.remove_profile("work")
+
+    assert stopped == [mgr.config.profile_root / "work"]
+
+
 def test_remove_profile_keep_data_keeps_home(mgr: CodexAlias) -> None:
     mgr.add_profile("work")
 
@@ -190,6 +209,33 @@ def test_run_argv_sets_isolated_home(mgr: CodexAlias) -> None:
     argv, env = mgr.run_argv("work", ["--", "--help"])
     assert argv == ["codex", "--", "--help"]
     assert env["CODEX_HOME"] == str(mgr.config.profile_root / "work")
+
+
+def test_run_with_relay_argv_prefixes_codex_config(
+    mgr: CodexAlias, monkeypatch
+) -> None:
+    mgr.add_profile("work")
+    monkeypatch.delenv("SHELL", raising=False)
+    monkeypatch.setattr(
+        mgr.relay_service,
+        "prepare",
+        lambda home: RelayLaunch(
+            ("-c", 'model_provider="codexalias_relay"'),
+            {"OPENAI_API_KEY": "test-key"},
+            RelayStatus(home, "running", "127.0.0.1", 4446, 123),
+        ),
+    )
+
+    argv, env = mgr.run_with_relay_argv("work", ["exec", "hello"])
+
+    assert argv == [
+        "codex",
+        "-c",
+        'model_provider="codexalias_relay"',
+        "exec",
+        "hello",
+    ]
+    assert env["OPENAI_API_KEY"] == "test-key"
 
 
 def test_resume_argv_uses_configured_wrapper(mgr: CodexAlias) -> None:
@@ -267,11 +313,13 @@ def test_config_prefers_codex_wrapper(tmp_path) -> None:
             "CODEXALIAS_CODEX_CMD": "real-codex",
             "CODEXALIAS_CODEX_WRAPPER": "/tools/codex-wrapper",
             "CODEXALIAS_CODEX_ARGS": '--flag "two words"',
+            "CODEXALIAS_RELAY_COMMAND": "uvx --from codex-relay codex-relay",
         }
     )
     assert config.codex_cmd == "real-codex"
     assert config.codex_wrapper == "/tools/codex-wrapper"
     assert config.effective_codex_cmd == "/tools/codex-wrapper"
+    assert config.relay_command == "uvx --from codex-relay codex-relay"
     assert config.codex_args == ("--flag", "two words")
 
 

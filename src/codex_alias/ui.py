@@ -33,6 +33,7 @@ from .models import (
     SessionFile,
     SessionFixResult,
 )
+from .relay import RelayStatus
 
 console = Console()
 err_console = Console(stderr=True)
@@ -52,6 +53,36 @@ def warn(message: str) -> None:
 
 def error(message: str) -> None:
     err_console.print(f"[bold red]ERROR[/]  {message}")
+
+
+def render_relay_status(status: RelayStatus) -> None:
+    """Render one optional profile relay status."""
+    styles = {
+        "running": "green",
+        "stopped": "yellow",
+        "stale": "yellow",
+        "disabled": "dim",
+    }
+    style = styles.get(status.state, "red")
+    suffix = ""
+    if status.host is not None and status.port is not None:
+        suffix = f"  http://{status.host}:{status.port}/v1"
+    if status.pid is not None:
+        suffix += f"  pid={status.pid}"
+    if status.message:
+        suffix += f"  ({status.message})"
+    console.print(
+        f"[{style}]{status.state:>8}[/]  {status.home.name}{suffix}"
+    )
+
+
+def render_relay_statuses(statuses: list[RelayStatus]) -> None:
+    if not statuses:
+        info("No profiles found.")
+        return
+    heading("Codex relays")
+    for status in statuses:
+        render_relay_status(status)
 
 
 def heading(text: str) -> None:

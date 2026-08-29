@@ -464,6 +464,78 @@ def profile_manage_group() -> None:
     """Create, inspect, rename, and remove profiles."""
 
 
+@cli.group(name="relay")
+def relay_group() -> None:
+    """Manage optional per-profile codex-relay processes."""
+
+
+def _relay_targets(
+    mgr: CodexAlias,
+    profile: str | None,
+    all_profiles: bool,
+) -> list[str]:
+    if profile and all_profiles:
+        raise click.UsageError("PROFILE and --all cannot be used together")
+    if all_profiles:
+        return [item.name for item in mgr.list_profiles()]
+    if profile is None:
+        raise click.UsageError("provide PROFILE or use --all")
+    return [profile]
+
+
+@relay_group.command(name="start")
+@click.argument("profile", required=False)
+@click.option(
+    "--all",
+    "all_profiles",
+    is_flag=True,
+    help="Start every configured profile relay.",
+)
+@click.pass_context
+def relay_start(ctx: click.Context, profile: str | None, all_profiles: bool) -> None:
+    """Start or reuse the relay configured for PROFILE."""
+    mgr = _mgr(ctx)
+    targets = _relay_targets(mgr, profile, all_profiles)
+    for target in targets:
+        ui.render_relay_status(mgr.relay_start(target))
+
+
+@relay_group.command(name="stop")
+@click.argument("profile", required=False)
+@click.option(
+    "--all",
+    "all_profiles",
+    is_flag=True,
+    help="Stop every recorded profile relay.",
+)
+@click.pass_context
+def relay_stop(ctx: click.Context, profile: str | None, all_profiles: bool) -> None:
+    """Stop the relay recorded for PROFILE."""
+    mgr = _mgr(ctx)
+    targets = _relay_targets(mgr, profile, all_profiles)
+    for target in targets:
+        ui.render_relay_status(mgr.relay_stop(target))
+
+
+@relay_group.command(name="status")
+@click.argument("profile", required=False)
+@click.option(
+    "--all",
+    "all_profiles",
+    is_flag=True,
+    help="Show every profile relay.",
+)
+@click.pass_context
+def relay_status(ctx: click.Context, profile: str | None, all_profiles: bool) -> None:
+    """Show the relay status for PROFILE, or every profile by default."""
+    mgr = _mgr(ctx)
+    if profile is not None or all_profiles:
+        targets = _relay_targets(mgr, profile, all_profiles)
+        ui.render_relay_statuses([mgr.relay_status(target) for target in targets])
+        return
+    ui.render_relay_statuses(mgr.relay_statuses())
+
+
 @cli.command()
 @click.argument("profile")
 @click.argument("command_name", required=False)
@@ -498,7 +570,7 @@ def add(ctx: click.Context, profile: str, command_name: str | None, no_bootstrap
 def run(ctx: click.Context, profile: str, codex_args: tuple[str, ...]) -> None:
     """Run codex once under an existing PROFILE without creating a wrapper."""
     mgr = _mgr(ctx)
-    argv, env = mgr.run_argv(profile, list(codex_args))
+    argv, env = mgr.run_with_relay_argv(profile, list(codex_args))
     os.execvpe(argv[0], argv, env)
 
 
@@ -569,7 +641,9 @@ def resume(
         return
 
     ui.info(f"Resuming copied session {result.session_id} ...")
-    argv, env = mgr.resume_argv(target_home, result.session_id, list(codex_args))
+    argv, env = mgr.resume_with_relay_argv(
+        target_home, result.session_id, list(codex_args)
+    )
     os.execvpe(argv[0], argv, env)
 
 
@@ -607,7 +681,9 @@ def detect(
 
     profile = detected.profile or "(detected home)"
     ui.info(f"Resuming session {detected.session_id} in profile {profile} ...")
-    argv, env = mgr.resume_argv(detected.home, detected.session_id, list(codex_args))
+    argv, env = mgr.resume_with_relay_argv(
+        detected.home, detected.session_id, list(codex_args)
+    )
     os.execvpe(argv[0], argv, env)
 
 

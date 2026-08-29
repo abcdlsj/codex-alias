@@ -9,6 +9,7 @@ Mirrors the environment contract of the original shell tool:
 - CODEXALIAS_CODEX_ARGS    -> codex_args     (optional shell-style fixed args)
 - CODEXALIAS_SOURCE_HOME   -> source_home    (default $CODEX_HOME or ~/.codex)
 - CODEXALIAS_MANAGER_BIN_NAME -> manager_bin (default "codexalias")
+- CODEXALIAS_RELAY_COMMAND -> relay_command (default "codex-relay")
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ class Config:
     manager_bin_name: str
     codex_wrapper: str | None = None
     codex_args: tuple[str, ...] = ()
+    relay_command: str = "codex-relay"
 
     @property
     def effective_codex_cmd(self) -> str:
@@ -64,6 +66,7 @@ class Config:
             manager_bin_name=env.get("CODEXALIAS_MANAGER_BIN_NAME", "codexalias"),
             codex_wrapper=env.get("CODEXALIAS_CODEX_WRAPPER") or None,
             codex_args=tuple(shlex.split(env.get("CODEXALIAS_CODEX_ARGS", ""))),
+            relay_command=env.get("CODEXALIAS_RELAY_COMMAND", "codex-relay"),
         )
 
     def profile_path(self, profile: str) -> Path:

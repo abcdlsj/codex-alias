@@ -37,6 +37,7 @@ from .home_service import (
 from .doctor_service import DoctorService
 from .launcher import ProfileLauncher
 from .profile_service import ProfileStore
+from .relay import RelayService, RelayStatus
 from .session_service import SessionService
 from .session_mappings import SessionMappingContext
 from .sharing_service import SessionSharingService
@@ -48,6 +49,7 @@ class CodexAlias:
         self.config = config
         self.launcher = ProfileLauncher(config)
         self.profile_store = ProfileStore(config, self.launcher)
+        self.relay_service = RelayService(config)
         self.home_resolver = HomeResolver(config, self.list_profiles)
         self.session_service = SessionService(
             config,
@@ -187,6 +189,17 @@ class CodexAlias:
         Deleting a home is refused when it is the configured source home or the
         current ``CODEX_HOME``, since removing either would break the tool.
         """
+        if not keep_data:
+            profile_path = self.profile_home(profile, must_exist=False)
+            # Let ProfileStore perform the authoritative safety checks.  Stop
+            # only after the path is known to be a real, removable profile so
+            # a refused source/current-home removal cannot affect a relay.
+            if profile_path.is_dir():
+                resolved = self._safe_resolve(profile_path)
+                if resolved != self._safe_resolve(self.config.source_home) and (
+                    resolved != self._safe_resolve(self.current_home())
+                ):
+                    self.relay_service.stop(profile_path)
         return self.profile_store.remove_profile(
             profile,
             command_name,
@@ -207,6 +220,51 @@ class CodexAlias:
     ) -> tuple[list[str], dict[str, str]]:
         """Build a resume invocation through the configured Codex wrapper."""
         return self.launcher.resume_argv(home, session_id, args)
+
+    def run_with_relay_argv(
+        self, profile: str, args: list[str]
+    ) -> tuple[list[str], dict[str, str]]:
+        """Build a launch and auto-start the profile's optional relay."""
+        home = self.profile_home(profile, must_exist=True)
+        launch = self.relay_service.prepare(home)
+        argv, env = self.launcher.run_argv(
+            profile,
+            args,
+            prefix_args=launch.codex_args,
+        )
+        env.update(launch.environment)
+        return argv, env
+
+    def resume_with_relay_argv(
+        self,
+        home: Path,
+        session_id: str,
+        args: list[str] | None = None,
+    ) -> tuple[list[str], dict[str, str]]:
+        """Build a resume launch and auto-start the target home's relay."""
+        launch = self.relay_service.prepare(home)
+        argv, env = self.launcher.resume_argv(
+            home,
+            session_id,
+            args,
+            prefix_args=launch.codex_args,
+        )
+        env.update(launch.environment)
+        return argv, env
+
+    def relay_start(self, profile: str) -> RelayStatus:
+        return self.relay_service.start(self.profile_home(profile, must_exist=True))
+
+    def relay_stop(self, profile: str) -> RelayStatus:
+        return self.relay_service.stop(self.profile_home(profile, must_exist=True))
+
+    def relay_status(self, profile: str) -> RelayStatus:
+        return self.relay_service.status(self.profile_home(profile, must_exist=True))
+
+    def relay_statuses(self) -> list[RelayStatus]:
+        return self.relay_service.statuses(
+            [profile.path for profile in self.list_profiles()]
+        )
 
     # Kept as compatibility shims for callers that used the old internals.
     def _codex_argv(self, args: list[str]) -> list[str]:

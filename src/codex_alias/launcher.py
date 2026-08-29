@@ -22,20 +22,32 @@ class ProfileLauncher:
         self.config = config
 
     def run_argv(
-        self, profile: str, args: list[str]
+        self,
+        profile: str,
+        args: list[str],
+        *,
+        prefix_args: list[str] | tuple[str, ...] = (),
     ) -> tuple[list[str], dict[str, str]]:
         """Build a one-shot launch under an existing ``profile`` home."""
         validate_name(profile, "profile")
         profile_path = self.config.profile_path(profile)
         if not profile_path.is_dir():
             raise ProfileNotFoundError(f"profile not found: {profile_path}")
-        return self._with_home(profile_path, args)
+        return self._with_home(profile_path, [*prefix_args, *args])
 
     def resume_argv(
-        self, home: Path, session_id: str, args: list[str] | None = None
+        self,
+        home: Path,
+        session_id: str,
+        args: list[str] | None = None,
+        *,
+        prefix_args: list[str] | tuple[str, ...] = (),
     ) -> tuple[list[str], dict[str, str]]:
         """Build a resume launch under an already-resolved home."""
-        return self._with_home(home, ["resume", session_id, *(args or [])])
+        return self._with_home(
+            home,
+            [*prefix_args, "resume", session_id, *(args or [])],
+        )
 
     def wrapper_script(self, profile: str) -> str:
         """Return the generated shell wrapper for ``profile``."""
