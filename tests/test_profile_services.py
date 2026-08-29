@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
+from codex_alias import ProfileNotFoundError
 from codex_alias.doctor_service import DoctorService
 from codex_alias.home_service import HomeResolver
 from codex_alias.launcher import ProfileLauncher
@@ -36,11 +39,19 @@ def test_profile_store_owns_home_and_wrapper_lifecycle(config) -> None:
 def test_profile_launcher_is_independent_from_profile_store(config, monkeypatch) -> None:
     launcher = ProfileLauncher(config)
     monkeypatch.delenv("SHELL", raising=False)
+    config.profile_path("work").mkdir(parents=True)
 
     argv, env = launcher.run_argv("work", ["--version"])
 
     assert argv == ["codex", "--version"]
     assert env["CODEX_HOME"] == str(config.profile_path("work"))
+
+
+def test_profile_launcher_rejects_missing_profile(config) -> None:
+    with pytest.raises(ProfileNotFoundError):
+        ProfileLauncher(config).run_argv("work", ["--version"])
+
+    assert not config.profile_path("work").exists()
 
 
 def test_home_resolver_keeps_reference_rules_out_of_profile_store(

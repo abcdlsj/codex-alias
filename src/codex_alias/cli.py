@@ -496,7 +496,7 @@ def add(ctx: click.Context, profile: str, command_name: str | None, no_bootstrap
 @click.argument("codex_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def run(ctx: click.Context, profile: str, codex_args: tuple[str, ...]) -> None:
-    """Run codex once under PROFILE without creating a wrapper."""
+    """Run codex once under an existing PROFILE without creating a wrapper."""
     mgr = _mgr(ctx)
     argv, env = mgr.run_argv(profile, list(codex_args))
     os.execvpe(argv[0], argv, env)

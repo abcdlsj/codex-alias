@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 from .config import Config
+from .errors import ProfileNotFoundError
 from .validation import validate_name
 
 
@@ -23,10 +24,11 @@ class ProfileLauncher:
     def run_argv(
         self, profile: str, args: list[str]
     ) -> tuple[list[str], dict[str, str]]:
-        """Build a one-shot launch under ``profile`` and create its home."""
+        """Build a one-shot launch under an existing ``profile`` home."""
         validate_name(profile, "profile")
         profile_path = self.config.profile_path(profile)
-        profile_path.mkdir(parents=True, exist_ok=True)
+        if not profile_path.is_dir():
+            raise ProfileNotFoundError(f"profile not found: {profile_path}")
         return self._with_home(profile_path, args)
 
     def resume_argv(

@@ -92,10 +92,11 @@ codexa migrate one <source|@source> <session-id> [target|@current]
 # Share sessions with a source home via symlink (existing profile)
 codexa share-sessions <profile> [source|@source]
 
-# Run codex once with a profile (without creating a wrapper)
+# Run codex once with an existing profile (without creating a wrapper)
+# Create it first with `codexa add <profile>` if needed.
 codexa run <profile> [codex args...]
 
-# Shortcut: run a profile and forward all remaining args to Codex
+# Shortcut: run an existing profile and forward all remaining args to Codex
 codexa <profile> [codex args...]
 
 # List profiles (compatibility alias; prefer `profile manage list`)

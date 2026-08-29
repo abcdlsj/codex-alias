@@ -186,6 +186,7 @@ def test_remove_profile_missing_home_raises(mgr: CodexAlias) -> None:
 
 
 def test_run_argv_sets_isolated_home(mgr: CodexAlias) -> None:
+    mgr.add_profile("work")
     argv, env = mgr.run_argv("work", ["--", "--help"])
     assert argv == ["codex", "--", "--help"]
     assert env["CODEX_HOME"] == str(mgr.config.profile_root / "work")
@@ -199,6 +200,7 @@ def test_resume_argv_uses_configured_wrapper(mgr: CodexAlias) -> None:
 
 
 def test_run_argv_inherits_fish_codex_wrapper(mgr: CodexAlias, monkeypatch) -> None:
+    mgr.add_profile("work")
     monkeypatch.setenv("SHELL", "/opt/homebrew/bin/fish")
 
     argv, _ = mgr.run_argv(
@@ -219,6 +221,7 @@ def test_run_argv_inherits_fish_codex_wrapper(mgr: CodexAlias, monkeypatch) -> N
 def test_run_argv_inherits_posix_shell_codex_wrapper(
     mgr: CodexAlias, monkeypatch, shell: str
 ) -> None:
+    mgr.add_profile("work")
     monkeypatch.setenv("SHELL", f"/bin/{shell}")
 
     argv, _ = mgr.run_argv("work", ["--model", "gpt-5"])
@@ -243,6 +246,7 @@ def test_explicit_codex_wrapper_bypasses_shell(tmp_path, monkeypatch) -> None:
         codex_wrapper="/tools/codex-wrapper",
     )
     monkeypatch.setenv("SHELL", "/opt/homebrew/bin/fish")
+    CodexAlias(config).add_profile("work")
 
     argv, _ = CodexAlias(config).run_argv("work", ["--version"])
 

@@ -5,6 +5,7 @@ import sqlite3
 
 from click.testing import CliRunner
 
+from codex_alias import ProfileNotFoundError
 from codex_alias.cli import cli
 from conftest import write_session
 
@@ -12,9 +13,10 @@ from conftest import write_session
 SID = "019d1df0-8f1e-7393-b54a-0f0b511c5a33"
 
 
-def test_run_forwards_unknown_codex_options(monkeypatch) -> None:
+def test_run_forwards_unknown_codex_options(monkeypatch, tmp_path) -> None:
     captured: dict[str, object] = {}
     monkeypatch.delenv("SHELL", raising=False)
+    (tmp_path / "profiles" / "cpa").mkdir(parents=True)
 
     def fake_execvpe(file: str, argv: list[str], env: dict[str, str]) -> None:
         captured.update(file=file, argv=argv, env=env)
@@ -41,9 +43,10 @@ def test_run_forwards_unknown_codex_options(monkeypatch) -> None:
     ]
 
 
-def test_profile_shortcut_forwards_codex_options(monkeypatch) -> None:
+def test_profile_shortcut_forwards_codex_options(monkeypatch, tmp_path) -> None:
     captured: dict[str, object] = {}
     monkeypatch.delenv("SHELL", raising=False)
+    (tmp_path / "profiles" / "luna-high").mkdir(parents=True)
 
     def fake_execvpe(file: str, argv: list[str], env: dict[str, str]) -> None:
         captured.update(file=file, argv=argv, env=env)
@@ -63,9 +66,10 @@ def test_profile_shortcut_forwards_codex_options(monkeypatch) -> None:
     assert captured["argv"] == ["codex", "--yolo", "--model", "gpt-5.6-sol"]
 
 
-def test_run_forwards_help_after_profile(monkeypatch) -> None:
+def test_run_forwards_help_after_profile(monkeypatch, tmp_path) -> None:
     captured: dict[str, object] = {}
     monkeypatch.delenv("SHELL", raising=False)
+    (tmp_path / "profiles" / "cpa").mkdir(parents=True)
 
     def fake_execvpe(file: str, argv: list[str], env: dict[str, str]) -> None:
         captured.update(file=file, argv=argv, env=env)
@@ -77,11 +81,19 @@ def test_run_forwards_help_after_profile(monkeypatch) -> None:
     assert captured["argv"] == ["codex", "--help"]
 
 
+def test_run_rejects_missing_profile_without_creating_home(tmp_path) -> None:
+    result = CliRunner().invoke(cli, ["run", "typo"], env=_env(tmp_path))
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ProfileNotFoundError)
+    assert not (tmp_path / "profiles" / "typo").exists()
+
+
 def test_run_help_before_profile_still_shows_manager_help() -> None:
     result = CliRunner().invoke(cli, ["run", "--help"])
 
     assert result.exit_code == 0
-    assert "Run codex once under PROFILE" in result.output
+    assert "Run codex once under an existing PROFILE" in result.output
 
 
 def test_profile_manage_lifecycle_commands(tmp_path) -> None:
