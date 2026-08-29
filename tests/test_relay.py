@@ -172,7 +172,11 @@ def test_start_persists_state_without_the_api_key(
     assert "test-key" not in json.dumps(state)
 
 
-def test_prepare_reports_missing_key(tmp_path: Path) -> None:
+def test_prepare_reports_missing_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
     home = tmp_path / "profile"
     home.mkdir()
     (home / "relay.toml").write_text(
