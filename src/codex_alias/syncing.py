@@ -61,6 +61,7 @@ SYNC_TYPE_SPECS = (
     SyncTypeSpec("prompts", "prompts directory", True),
     SyncTypeSpec("instructions", "AGENTS.md and AGENTS.override.md", True),
     SyncTypeSpec("config", "auth.json and config.toml", True),
+    SyncTypeSpec("statusline", "status_line and session_picker_view from root config"),
     SyncTypeSpec("hooks", "the profile's saved root-hook selection"),
     SyncTypeSpec("sessions_shared", "shared session symlinks to the source home"),
     SyncTypeSpec("sessions_migrate", "interactive session migration"),

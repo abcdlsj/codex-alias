@@ -286,6 +286,7 @@ class SyncService:
             "prompts": self._sync_prompts,
             "instructions": self._sync_instructions,
             "config": self._sync_config,
+            "statusline": self._sync_statusline,
             "hooks": self._sync_hooks,
             "sessions_shared": self._sync_shared_sessions,
             "sessions_migrate": self._sync_migrated_sessions,
@@ -396,6 +397,55 @@ class SyncService:
         self._copy_core_config(
             self.mgr.config.source_home, profile_path, dry_run=dry_run
         )
+
+    def _sync_statusline(self, _mgr: Any, profile_path: Path, *, dry_run: bool = False) -> None:
+        import tomllib
+
+        src_config = self.mgr.config.source_home / "config.toml"
+        dst_config = profile_path / "config.toml"
+
+        if not src_config.is_file():
+            self.emit("info", f"No source config.toml found at {src_config}.")
+            return
+
+        with open(src_config, "rb") as f:
+            src_toml = tomllib.load(f)
+
+        tui_config = src_toml.get("tui", {})
+        status_line = tui_config.get("status_line")
+        session_picker_view = tui_config.get("session_picker_view")
+
+        if not status_line and not session_picker_view:
+            self.emit("info", "No statusline configuration found in source config.toml.")
+            return
+
+        if dry_run:
+            self.emit("info", "Would sync statusline configuration from root config.toml.")
+            return
+
+        # Read existing profile config
+        dst_toml = {}
+        if dst_config.is_file():
+            with open(dst_config, "rb") as f:
+                dst_toml = tomllib.load(f)
+
+        # Update tui section
+        if "tui" not in dst_toml:
+            dst_toml["tui"] = {}
+
+        if status_line:
+            dst_toml["tui"]["status_line"] = status_line
+        if session_picker_view:
+            dst_toml["tui"]["session_picker_view"] = session_picker_view
+        dst_toml["tui"]["status_line_use_colors"] = tui_config.get("status_line_use_colors", True)
+
+        # Write back config.toml
+        import tomli_w
+
+        with open(dst_config, "wb") as f:
+            tomli_w.dump(dst_toml, f)
+
+        self.emit("success", "Synced statusline configuration from root config.toml.")
 
     def _sync_skills(self, _mgr: Any, profile_path: Path, *, dry_run: bool = False) -> None:
         self._copy_skills(
