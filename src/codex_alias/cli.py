@@ -379,6 +379,7 @@ _sync_rules = _compat_sync_handler("rules")
 _sync_prompts = _compat_sync_handler("prompts")
 _sync_instructions = _compat_sync_handler("instructions")
 _sync_config = _compat_sync_handler("config")
+_sync_statusline = _compat_sync_handler("statusline")
 _sync_hooks = _compat_sync_handler("hooks")
 _sync_shared_sessions = _compat_sync_handler("sessions_shared")
 _sync_migrated_sessions = _compat_sync_handler("sessions_migrate")
@@ -394,6 +395,7 @@ _SYNC_MIGRATIONS = {
     "prompts": _sync_prompts,
     "instructions": _sync_instructions,
     "config": _sync_config,
+    "statusline": _sync_statusline,
     "hooks": _sync_hooks,
     "sessions_shared": _sync_shared_sessions,
     "sessions_migrate": _sync_migrated_sessions,

@@ -176,7 +176,10 @@ class SyncService:
         for sync_type in selected_types:
             migration = available.get(sync_type)
             if migration is None:
-                self.emit("warn", f"Unknown sync type '{sync_type}', skipped.")
+                self.emit(
+                    "warn",
+                    f"Unknown sync type '{sync_type}' for profile '{profile}', skipped.",
+                )
                 continue
             if saved_mode and sync_type == "plugins":
                 # Before granular resource types existed, ``plugins`` meant
@@ -399,35 +402,59 @@ class SyncService:
         )
 
     def _sync_statusline(self, _mgr: Any, profile_path: Path, *, dry_run: bool = False) -> None:
-        import tomllib
+        try:
+            import tomllib  # type: ignore[import-not-found, no-redef, unused-ignore]
+        except ModuleNotFoundError:  # pragma: no cover - python <3.11
+            import tomli as tomllib  # type: ignore[no-redef]
 
         src_config = self.mgr.config.source_home / "config.toml"
         dst_config = profile_path / "config.toml"
 
         if not src_config.is_file():
-            self.emit("info", f"No source config.toml found at {src_config}.")
+            self.emit(
+                "info",
+                f"No source config.toml found at {src_config} for profile '{profile_path.name}', skipped.",
+            )
             return
 
-        with open(src_config, "rb") as f:
-            src_toml = tomllib.load(f)
+        try:
+            src_toml = tomllib.loads(src_config.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:  # type: ignore[attr-defined]
+            self.emit(
+                "warn",
+                f"Failed to read source config.toml for profile '{profile_path.name}': {exc}",
+            )
+            return
 
         tui_config = src_toml.get("tui", {})
         status_line = tui_config.get("status_line")
         session_picker_view = tui_config.get("session_picker_view")
 
         if not status_line and not session_picker_view:
-            self.emit("info", "No statusline configuration found in source config.toml.")
+            self.emit(
+                "info",
+                f"No statusline configuration found in source config.toml for profile '{profile_path.name}', skipped.",
+            )
             return
 
         if dry_run:
-            self.emit("info", "Would sync statusline configuration from root config.toml.")
+            self.emit(
+                "info",
+                f"Would sync statusline configuration from root config.toml for profile '{profile_path.name}'.",
+            )
             return
 
         # Read existing profile config
         dst_toml = {}
         if dst_config.is_file():
-            with open(dst_config, "rb") as f:
-                dst_toml = tomllib.load(f)
+            try:
+                dst_toml = tomllib.loads(dst_config.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:  # type: ignore[attr-defined]
+                self.emit(
+                    "warn",
+                    f"Failed to read profile config.toml for profile '{profile_path.name}': {exc}",
+                )
+                return
 
         # Update tui section
         if "tui" not in dst_toml:
@@ -445,7 +472,10 @@ class SyncService:
         with open(dst_config, "wb") as f:
             tomli_w.dump(dst_toml, f)
 
-        self.emit("success", "Synced statusline configuration from root config.toml.")
+        self.emit(
+            "success",
+            f"Synced statusline configuration from root config.toml for profile '{profile_path.name}'.",
+        )
 
     def _sync_skills(self, _mgr: Any, profile_path: Path, *, dry_run: bool = False) -> None:
         self._copy_skills(
